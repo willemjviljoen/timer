@@ -1,6 +1,6 @@
 {
   "name": "timetracker",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Minimal time tracking app with system tray support",
   "main": "src/main/main.js",
   "scripts": {
@@ -23,8 +23,9 @@
       "assets/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "assets/icon.png"
+      "target": [
+        { "target": "zip", "arch": ["x64"] }
+      ]
     },
     "nsis": {
       "oneClick": false,

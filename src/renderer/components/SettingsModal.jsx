@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-export default function SettingsModal({ onClose, onSaved }) {
+export default function SettingsModal({ onClose, onSaved, updateInfo }) {
   const [threshold, setThreshold] = useState(120);
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState(null);
   const [saved, setSaved] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState(updateInfo ?? null);
 
   const api = window.electronAPI;
 
@@ -39,6 +41,19 @@ export default function SettingsModal({ onClose, onSaved }) {
       setExportResult({ ok: false, error: e.message });
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handleCheckUpdate = async () => {
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const result = await api?.checkForUpdate?.();
+      setCheckResult(result);
+    } catch (e) {
+      setCheckResult({ ok: false, error: e.message });
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -102,6 +117,38 @@ export default function SettingsModal({ onClose, onSaved }) {
                     : `✗ ${exportResult.error}`}
               </p>
             )}
+          </div>
+
+          {/* ── Updates ── */}
+          <div className="settings__section">
+            <h3 className="settings__section-title">Updates</h3>
+            <div className="settings__update-row">
+              <button
+                className="settings__export-btn"
+                onClick={handleCheckUpdate}
+                disabled={checking}
+              >
+                {checking ? 'Checking…' : 'Check for updates'}
+              </button>
+              {checkResult && (
+                <span className={`settings__update-result ${checkResult.ok && checkResult.hasUpdate ? 'new' : checkResult.ok ? 'ok' : 'err'}`}>
+                  {!checkResult.ok
+                    ? `✗ ${checkResult.error}`
+                    : checkResult.hasUpdate
+                      ? <>
+                          v{checkResult.latestVersion} available!{' '}
+                          <button
+                            className="settings__update-link"
+                            onClick={() => api?.openExternal?.(checkResult.releaseUrl)}
+                          >
+                            Download →
+                          </button>
+                        </>
+                      : `✓ You're on the latest version (v${checkResult.currentVersion})`
+                  }
+                </span>
+              )}
+            </div>
           </div>
 
           {/* ── Keyboard Shortcuts ── */}

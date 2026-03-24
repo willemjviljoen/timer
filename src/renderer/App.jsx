@@ -14,6 +14,7 @@ export default function App() {
   const [deletingEntry, setDeletingEntry] = useState(null);
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState({ notificationThresholdMinutes: 120 });
+  const [updateInfo, setUpdateInfo] = useState(null);
 
   const api = window.electronAPI;
 
@@ -40,6 +41,12 @@ export default function App() {
   useEffect(() => {
     loadEntries();
     refreshSettings();
+    // Silent startup update check (delay so it doesn't block UI)
+    setTimeout(() => {
+      api?.checkForUpdate?.().then(result => {
+        if (result?.ok && result?.hasUpdate) setUpdateInfo(result);
+      }).catch(() => {});
+    }, 3000);
   }, [loadEntries, refreshSettings]);
 
   const handleEntrySaved = useCallback(() => {
@@ -74,7 +81,7 @@ export default function App() {
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <TitleBar onOpenSettings={() => setShowSettings(true)} />
+      <TitleBar onOpenSettings={() => setShowSettings(true)} hasUpdate={!!updateInfo} />
       <TrackerBar onEntrySaved={handleEntrySaved} settings={settings} />
       <HistoryList
         entries={entries}
@@ -99,6 +106,7 @@ export default function App() {
         <SettingsModal
           onClose={() => { setShowSettings(false); refreshSettings(); }}
           onSaved={refreshSettings}
+          updateInfo={updateInfo}
         />
       )}
       {showFlash && <SavedFlash />}

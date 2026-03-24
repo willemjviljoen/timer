@@ -35,4 +35,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // CSV export
   exportCsv: () => ipcRenderer.invoke('export-csv'),
+
+  // Update check
+  checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 });

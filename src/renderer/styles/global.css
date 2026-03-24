@@ -112,6 +112,21 @@ html, body, #root {
   color: white;
 }
 
+.titlebar__btn--settings {
+  position: relative;
+}
+
+.titlebar__update-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px var(--accent);
+}
+
 /* ─── Tracker Bar ──────────────────────────────────────────────── */
 .tracker {
   display: flex;
@@ -839,4 +854,40 @@ kbd {
   font-size: 11px;
   color: var(--text-dim);
   margin-left: 2px;
+}
+
+.settings__update-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.settings__update-result {
+  font-size: 12px;
+  font-family: var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings__update-result.ok  { color: var(--green); }
+.settings__update-result.err { color: var(--red); }
+.settings__update-result.new { color: var(--accent); font-weight: 600; }
+
+.settings__update-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.settings__update-link:hover {
+  color: var(--accent-hover);
 }

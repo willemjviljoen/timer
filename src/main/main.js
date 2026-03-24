@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification, shell } = require('electron');
 const path = require('path');
 const fs   = require('fs');
+const https = require('https');
 const Database = require('better-sqlite3');
 
 // Resolve assets folder whether running in dev or packaged
@@ -213,6 +214,47 @@ function registerIPC() {
 
     fs.writeFileSync(result.filePath, lines.join('\r\n'), 'utf-8');
     return { ok: true, path: result.filePath };
+  });
+
+  // Check for updates via GitHub Releases API
+  ipcMain.handle('check-for-update', () => {
+    return new Promise((resolve) => {
+      const options = {
+        hostname: 'api.github.com',
+        path: '/repos/willemjviljoen/timer/releases/latest',
+        headers: { 'User-Agent': 'TimeTracker-app' },
+        timeout: 8000,
+      };
+      const req = https.get(options, (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          try {
+            const release = JSON.parse(data);
+            const latestTag  = (release.tag_name || '').replace(/^v/, '');
+            const currentVer = app.getVersion();
+            const hasUpdate  = latestTag && latestTag !== currentVer;
+            resolve({
+              ok: true,
+              hasUpdate,
+              latestVersion: latestTag,
+              currentVersion: currentVer,
+              releaseUrl: release.html_url || 'https://github.com/willemjviljoen/timer/releases',
+            });
+          } catch {
+            resolve({ ok: false, error: 'Could not parse response' });
+          }
+        });
+      });
+      req.on('error', (e) => resolve({ ok: false, error: e.message }));
+      req.on('timeout', () => { req.destroy(); resolve({ ok: false, error: 'Request timed out' }); });
+    });
+  });
+
+  // Open a URL in the default browser
+  ipcMain.handle('open-external', (_event, url) => {
+    shell.openExternal(url);
+    return { ok: true };
   });
 }
 

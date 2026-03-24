@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 
-export default function TrackerBar({ onEntrySaved }) {
+export default function TrackerBar({ onEntrySaved, settings }) {
   const [description, setDescription] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0); // milliseconds
@@ -11,6 +11,7 @@ export default function TrackerBar({ onEntrySaved }) {
   const startTimeRef = useRef(null);
   const intervalRef = useRef(null);
   const inputRef = useRef(null);
+  const notificationFiredRef = useRef(false);
 
   const api = window.electronAPI;
 
@@ -25,6 +26,7 @@ export default function TrackerBar({ onEntrySaved }) {
     startTimeRef.current = startTime;
     setIsRunning(true);
     setShowSuggestions(false);
+    notificationFiredRef.current = false;
 
     // Persist active timer to DB for crash recovery
     api?.saveActiveTimer?.({ description: description.trim(), startTime });
@@ -84,6 +86,32 @@ export default function TrackerBar({ onEntrySaved }) {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
+
+  // ── Global Ctrl+Space shortcut ──────────────────────────────────────
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.ctrlKey && e.code === 'Space') {
+        e.preventDefault();
+        toggleTimer();
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [toggleTimer]);
+
+  // ── Notification threshold check ────────────────────────────────
+  useEffect(() => {
+    if (!isRunning || !settings) return;
+    const thresholdMs = (settings.notificationThresholdMinutes ?? 120) * 60 * 1000;
+    if (elapsed >= thresholdMs && !notificationFiredRef.current) {
+      notificationFiredRef.current = true;
+      const mins = Math.floor(elapsed / 60000);
+      api?.showNotification?.(
+        'Timer Alert ⏰',
+        `"${description}" has been running for ${mins} minute${mins !== 1 ? 's' : ''}.`
+      );
+    }
+  }, [elapsed, isRunning, settings, description, api]);
 
   // ── Restore active timer on mount (crash recovery) ────────────
   useEffect(() => {

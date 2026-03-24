@@ -1,5 +1,6 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notification } = require('electron');
 const path = require('path');
+const fs   = require('fs');
 const Database = require('better-sqlite3');
 
 // Resolve assets folder whether running in dev or packaged
@@ -14,6 +15,33 @@ let mainWindow = null;
 let tray = null;
 let db = null;
 let isQuitting = false;
+
+// ─── Settings ────────────────────────────────────────────────────
+const DEFAULT_SETTINGS = { notificationThresholdMinutes: 120 };
+let settingsCache = null;
+
+function getSettingsPath() {
+  return path.join(app.getPath('userData'), 'settings.json');
+}
+
+function loadSettings() {
+  try {
+    const raw = fs.readFileSync(getSettingsPath(), 'utf-8');
+    settingsCache = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    settingsCache = { ...DEFAULT_SETTINGS };
+  }
+  return settingsCache;
+}
+
+function writeSettings(settings) {
+  const merged = { ...DEFAULT_SETTINGS, ...settings };
+  merged.notificationThresholdMinutes = Math.max(1, Math.min(999,
+    Number(merged.notificationThresholdMinutes) || 120));
+  fs.writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2), 'utf-8');
+  settingsCache = merged;
+  return merged;
+}
 
 // ─── Database Setup ──────────────────────────────────────────────
 function initDatabase() {
@@ -137,6 +165,55 @@ function registerIPC() {
 
   // App version
   ipcMain.handle('get-version', () => app.getVersion());
+
+  // Settings
+  ipcMain.handle('get-settings', () => loadSettings());
+  ipcMain.handle('save-settings', (_event, settings) => writeSettings(settings));
+
+  // Desktop notification
+  ipcMain.handle('show-notification', (_event, title, body) => {
+    if (Notification.isSupported()) {
+      new Notification({ title, body, icon: assetsPath('icon.png') }).show();
+    }
+    return { ok: true };
+  });
+
+  // CSV export
+  ipcMain.handle('export-csv', async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export Time Entries',
+      defaultPath: path.join(
+        app.getPath('documents'),
+        `timetracker-export-${new Date().toISOString().slice(0, 10)}.csv`
+      ),
+      filters: [{ name: 'CSV Files', extensions: ['csv'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { ok: false, cancelled: true };
+    }
+
+    const entries = db.prepare(`
+      SELECT description, start_time, end_time, duration_ms, created_at
+      FROM time_entries
+      ORDER BY created_at DESC
+    `).all();
+
+    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const pad = (n) => String(n).padStart(2, '0');
+
+    const lines = ['Description,Start Time,End Time,Duration (ms),Duration (hh:mm:ss),Created At'];
+    for (const e of entries) {
+      const h = Math.floor(e.duration_ms / 3600000);
+      const m = Math.floor((e.duration_ms % 3600000) / 60000);
+      const s = Math.floor((e.duration_ms % 60000) / 1000);
+      const dur = `${pad(h)}:${pad(m)}:${pad(s)}`;
+      lines.push([esc(e.description), esc(e.start_time), esc(e.end_time), e.duration_ms, esc(dur), esc(e.created_at)].join(','));
+    }
+
+    fs.writeFileSync(result.filePath, lines.join('\r\n'), 'utf-8');
+    return { ok: true, path: result.filePath };
+  });
 }
 
 // ─── Tray ────────────────────────────────────────────────────────
@@ -226,6 +303,7 @@ function createWindow() {
 
 // ─── App Lifecycle ───────────────────────────────────────────────
 app.whenReady().then(() => {
+  loadSettings();
   initDatabase();
   registerIPC();
   createTray();

@@ -25,4 +25,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // App info
   getVersion: () => ipcRenderer.invoke('get-version'),
+
+  // Settings
+  getSettings: () => ipcRenderer.invoke('get-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+
+  // Notifications
+  showNotification: (title, body) => ipcRenderer.invoke('show-notification', title, body),
+
+  // CSV export
+  exportCsv: () => ipcRenderer.invoke('export-csv'),
 });

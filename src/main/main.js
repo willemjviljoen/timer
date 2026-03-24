@@ -2,6 +2,14 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electr
 const path = require('path');
 const Database = require('better-sqlite3');
 
+// Resolve assets folder whether running in dev or packaged
+function assetsPath(...segments) {
+  const base = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets')
+    : path.join(__dirname, '..', '..', 'assets');
+  return path.join(base, ...segments);
+}
+
 let mainWindow = null;
 let tray = null;
 let db = null;
@@ -126,25 +134,17 @@ function registerIPC() {
     `);
     return stmt.all(limit);
   });
+
+  // App version
+  ipcMain.handle('get-version', () => app.getVersion());
 }
 
 // ─── Tray ────────────────────────────────────────────────────────
 function createTray() {
-  // Create a simple 16x16 tray icon programmatically
-  const iconSize = 16;
-  const canvas = nativeImage.createEmpty();
-
-  // Use a simple built-in icon approach
-  // On Windows, we create a basic icon from raw pixel data
-  const icon = nativeImage.createFromDataURL(
-    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAA' +
-    'gklEQVQ4T2NkoBAwUqifgWoG/P//n+Hf338MTEyMDIxMTAzEGsDIyMjw7+8/BjZOVob/' +
-    'f/8xEGUAyIB///4zsHGwMfz/+5+BiZGJIbewkDgX/P/3n4GVnZXh/7//DEyMTAxFJcXE' +
-    'GQAKQzYONgZGJkaG4pJi4gIRFOjEhwHJYUCuFwBJAi0Ry3odJQAAAABJRU5ErkJggg=='
-  );
+  const icon = nativeImage.createFromPath(assetsPath('tray.png'));
 
   tray = new Tray(icon);
-  tray.setToolTip('TimeTracker');
+  tray.setToolTip(`TimeTracker v${app.getVersion()}`);
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -192,6 +192,7 @@ function createWindow() {
     skipTaskbar: false,
     alwaysOnTop: false,
     backgroundColor: '#0a0a0a',
+    icon: assetsPath('icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

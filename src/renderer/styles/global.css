@@ -50,6 +50,12 @@ html, body, #root {
   flex-shrink: 0;
 }
 
+.titlebar__brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .titlebar__label {
   font-size: 11px;
   font-weight: 600;
@@ -57,6 +63,19 @@ html, body, #root {
   text-transform: uppercase;
   color: var(--text-dim);
   font-family: var(--font-mono);
+}
+
+.titlebar__version {
+  font-size: 10px;
+  font-weight: 500;
+  font-family: var(--font-mono);
+  color: var(--accent);
+  opacity: 0.7;
+  letter-spacing: 0.04em;
+  background: rgba(232, 93, 4, 0.1);
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid rgba(232, 93, 4, 0.2);
 }
 
 .titlebar__controls {

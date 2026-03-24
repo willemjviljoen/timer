@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Dark background with rounded corners -->
+  <rect width="256" height="256" rx="52" fill="#111111"/>
+
+  <!-- Clock face background -->
+  <circle cx="128" cy="142" r="74" fill="#181818" stroke="#1e1e1e" stroke-width="2"/>
+
+  <!-- Orange progress arc ~75% (circumference ≈ 465, 75%≈348) -->
+  <circle cx="128" cy="142" r="74" fill="none" stroke="#e85d04" stroke-width="12"
+    stroke-dasharray="348 116" stroke-linecap="round"
+    transform="rotate(-90 128 142)"/>
+
+  <!-- Stopwatch crown button -->
+  <rect x="120" y="52" width="16" height="16" rx="5" fill="#e85d04"/>
+
+  <!-- Hour hand — pointing to ~10 o'clock -->
+  <line x1="128" y1="142" x2="90" y2="97" stroke="#d0d0d0" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Minute hand — pointing to ~2 o'clock (orange) -->
+  <line x1="128" y1="142" x2="168" y2="104" stroke="#e85d04" stroke-width="9" stroke-linecap="round"/>
+
+  <!-- Center cap -->
+  <circle cx="128" cy="142" r="8" fill="#e85d04"/>
+  <circle cx="128" cy="142" r="3" fill="#111111"/>
+</svg>

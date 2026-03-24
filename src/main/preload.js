@@ -22,4 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onAlwaysOnTopChanged: (callback) => {
     ipcRenderer.on('always-on-top-changed', (_event, value) => callback(value));
   },
+
+  // App info
+  getVersion: () => ipcRenderer.invoke('get-version'),
 });

@@ -2,17 +2,22 @@ import React, { useState, useEffect } from 'react';
 
 export default function TitleBar() {
   const [pinned, setPinned] = useState(false);
+  const [version, setVersion] = useState('');
   const api = window.electronAPI;
 
   useEffect(() => {
     if (api?.onAlwaysOnTopChanged) {
       api.onAlwaysOnTopChanged((value) => setPinned(value));
     }
+    api?.getVersion?.().then(v => setVersion(v)).catch(() => {});
   }, []);
 
   return (
     <div className="titlebar">
-      <span className="titlebar__label">TimeTracker</span>
+      <div className="titlebar__brand">
+        <span className="titlebar__label">TimeTracker</span>
+        {version && <span className="titlebar__version">v{version}</span>}
+      </div>
 
       <div className="titlebar__controls">
         {/* Pin / Always-on-top */}

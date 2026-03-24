@@ -1,0 +1,55 @@
+{
+  "name": "timetracker",
+  "version": "1.0.0",
+  "description": "Minimal time tracking app with system tray support",
+  "main": "src/main/main.js",
+  "scripts": {
+    "postinstall": "electron-builder install-app-deps",
+    "start": "electron .",
+    "dev": "concurrently \"npx webpack serve --config webpack.config.js\" \"wait-on http://localhost:9000 && electron .\"",
+    "build": "npx webpack --config webpack.config.js --mode production",
+    "pack": "electron-builder --dir",
+    "dist": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.timetracker.app",
+    "productName": "TimeTracker",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/main/**/*",
+      "dist/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.26.0",
+    "@babel/preset-env": "^7.26.0",
+    "@babel/preset-react": "^7.26.0",
+    "babel-loader": "^9.2.1",
+    "concurrently": "^9.1.0",
+    "css-loader": "^7.1.2",
+    "electron": "^41.0.3",
+    "electron-builder": "^26.8.2",
+    "html-webpack-plugin": "^5.6.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "style-loader": "^4.0.0",
+    "wait-on": "^8.0.3",
+    "webpack": "^5.98.0",
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.0"
+  }
+}

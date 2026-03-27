@@ -46,4 +46,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteTag: (id) => ipcRenderer.invoke('delete-tag', id),
   setEntryTags: (data) => ipcRenderer.invoke('set-entry-tags', data),
   getEntryTags: (entryId) => ipcRenderer.invoke('get-entry-tags', entryId),
+
+  // Window control
+  resizeWindow: (size) => ipcRenderer.invoke('resize-window', size),
+
+  // Timer state and controls
+  updateTimerState: (state) => ipcRenderer.invoke('update-timer-state', state),
+  onThumbbarPlayPause: (callback) => {
+    ipcRenderer.on('thumbbar-play-pause', () => callback());
+  },
+  onThumbbarStop: (callback) => {
+    ipcRenderer.on('thumbbar-stop', () => callback());
+  },
+  onThumbbarSettings: (callback) => {
+    ipcRenderer.on('thumbbar-settings', () => callback());
+  },
 });

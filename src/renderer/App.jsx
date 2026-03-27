@@ -6,6 +6,7 @@ import EditModal from './components/EditModal';
 import DeleteConfirm from './components/DeleteConfirm';
 import SavedFlash from './components/SavedFlash';
 import SettingsModal from './components/SettingsModal';
+import MiniWidget from './components/MiniWidget';
 
 export default function App() {
   const [showFlash, setShowFlash] = useState(false);
@@ -17,6 +18,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [settings, setSettings] = useState({ notificationThresholdMinutes: 120 });
   const [updateInfo, setUpdateInfo] = useState(null);
+  const [timerState, setTimerState] = useState({ isRunning: false, description: '', elapsed: 0 });
+  const [miniMode, setMiniMode] = useState(false);
 
   const api = window.electronAPI;
 
@@ -121,22 +124,78 @@ export default function App() {
     setIsNewEntry(true);
   }, []);
 
+  // Forward timer state to main process
+  useEffect(() => {
+    api?.updateTimerState?.(timerState);
+  }, [timerState, api]);
+
+  // Listen for thumbbar control events
+  useEffect(() => {
+    api?.onThumbbarPlayPause?.(() => {
+      window.dispatchEvent(new CustomEvent('tracker-play-pause'));
+    });
+
+    api?.onThumbbarStop?.(() => {
+      window.dispatchEvent(new CustomEvent('tracker-stop'));
+    });
+
+    api?.onThumbbarSettings?.(() => {
+      setShowSettings(true);
+    });
+  }, [api]);
+
+  const handleToggleMiniMode = useCallback(async () => {
+    // Notify main process to resize window FIRST
+    if (!miniMode) {
+      // Switching TO mini mode - resize first (compact!)
+      await api?.resizeWindow?.({ width: 300, height: 110 });
+    } else {
+      // Switching FROM mini mode - resize first
+      await api?.resizeWindow?.({ width: 720, height: 680 });
+    }
+    // Then toggle UI
+    setMiniMode(prev => !prev);
+  }, [miniMode, api]);
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <TitleBar onOpenSettings={() => setShowSettings(true)} hasUpdate={!!updateInfo} />
-      <TrackerBar
-        onEntrySaved={handleEntrySaved}
-        settings={settings}
-        allTags={allTags}
-        onCreateTag={handleCreateTag}
-      />
-      <HistoryList
-        entries={entries}
-        allTags={allTags}
-        onEdit={entry => { setEditingEntry(entry); setIsNewEntry(false); }}
-        onDelete={entry => setDeletingEntry(entry)}
-        onCreateFromGap={handleCreateFromGap}
-      />
+      {miniMode ? (
+        // Mini mode - only show the widget, but keep TrackerBar hidden for event handling
+        <>
+          <MiniWidget timerState={timerState} onToggleMode={handleToggleMiniMode} />
+          <TrackerBar
+            onEntrySaved={handleEntrySaved}
+            settings={settings}
+            allTags={allTags}
+            onCreateTag={handleCreateTag}
+            onTimerStateChange={setTimerState}
+            style={{ display: 'none' }}
+          />
+        </>
+      ) : (
+        // Full mode
+        <>
+          <TitleBar
+            onOpenSettings={() => setShowSettings(true)}
+            hasUpdate={!!updateInfo}
+            onToggleMiniMode={handleToggleMiniMode}
+          />
+          <TrackerBar
+            onEntrySaved={handleEntrySaved}
+            settings={settings}
+            allTags={allTags}
+            onCreateTag={handleCreateTag}
+            onTimerStateChange={setTimerState}
+          />
+          <HistoryList
+            entries={entries}
+            allTags={allTags}
+            onEdit={entry => { setEditingEntry(entry); setIsNewEntry(false); }}
+            onDelete={entry => setDeletingEntry(entry)}
+            onCreateFromGap={handleCreateFromGap}
+          />
+        </>
+      )}
 
       {editingEntry && (
         isNewEntry ? (

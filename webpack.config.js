@@ -42,4 +42,9 @@ module.exports = {
       directory: path.join(__dirname, 'public'),
     },
   },
+  performance: {
+    maxEntrypointSize: 400000,
+    maxAssetSize: 400000,
+    hints: 'warning',
+  },
 };

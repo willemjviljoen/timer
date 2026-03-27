@@ -16,6 +16,7 @@ let mainWindow = null;
 let tray = null;
 let db = null;
 let isQuitting = false;
+let timerState = { isRunning: false, description: '', elapsed: 0 };
 
 // ─── Settings ────────────────────────────────────────────────────
 const DEFAULT_SETTINGS = { notificationThresholdMinutes: 120 };
@@ -330,6 +331,21 @@ function registerIPC() {
   ipcMain.handle('get-entry-tags', (_event, entryId) => {
     return db.prepare('SELECT tag_id FROM entry_tags WHERE entry_id = ?').all(entryId).map(r => r.tag_id);
   });
+
+  // ─── Window Control ────────────────────────────────────────────
+  ipcMain.handle('resize-window', (_event, size) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setSize(size.width, size.height, true);
+      // Force layout update
+      mainWindow.webContents.invalidate();
+    }
+    return { ok: true };
+  });
+
+  ipcMain.handle('update-timer-state', (_event, state) => {
+    timerState = state;
+    return { ok: true };
+  });
 }
 
 // ─── Tray ────────────────────────────────────────────────────────
@@ -376,8 +392,8 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 720,
     height: 680,
-    minWidth: 520,
-    minHeight: 300,
+    minWidth: 280,
+    minHeight: 100,
     maxHeight: 1000,
     frame: false,
     transparent: false,
@@ -406,6 +422,38 @@ function createWindow() {
       mainWindow.hide();
     }
   });
+
+  // Setup thumbnail toolbar buttons (Windows)
+  if (process.platform === 'win32') {
+    // Create simple icons as nativeImage
+    const createSimpleIcon = (unicode) => {
+      const canvas = require('canvas') ? null : undefined;
+      // Fallback: use transparent placeholder (Electron will handle button display)
+      return nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 });
+    };
+
+    try {
+      mainWindow.setThumbarButtons([
+        {
+          tooltip: 'Play/Pause (Ctrl+Space)',
+          icon: nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 }),
+          click: () => mainWindow.webContents.send('thumbbar-play-pause'),
+        },
+        {
+          tooltip: 'Stop',
+          icon: nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 }),
+          click: () => mainWindow.webContents.send('thumbbar-stop'),
+        },
+        {
+          tooltip: 'Settings',
+          icon: nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 }),
+          click: () => mainWindow.webContents.send('thumbbar-settings'),
+        },
+      ]);
+    } catch (e) {
+      console.warn('Could not set thumbnail buttons:', e.message);
+    }
+  }
 
   // IPC: window controls (frameless)
   ipcMain.on('window-minimize', () => mainWindow.minimize());

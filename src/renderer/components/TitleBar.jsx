@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function TitleBar({ onOpenSettings, hasUpdate }) {
+export default function TitleBar({ onOpenSettings, hasUpdate, onToggleMiniMode }) {
   const [pinned, setPinned] = useState(false);
   const [version, setVersion] = useState('');
   const api = window.electronAPI;
@@ -20,6 +20,19 @@ export default function TitleBar({ onOpenSettings, hasUpdate }) {
       </div>
 
       <div className="titlebar__controls">
+        {/* Toggle Mini Mode */}
+        <button
+          className="titlebar__btn"
+          title="Toggle mini mode"
+          onClick={() => onToggleMiniMode?.()}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <line x1="9" y1="9" x2="15" y2="9" />
+            <line x1="9" y1="15" x2="15" y2="15" />
+          </svg>
+        </button>
+
         {/* Settings gear */}
         <button
           className="titlebar__btn titlebar__btn--settings"

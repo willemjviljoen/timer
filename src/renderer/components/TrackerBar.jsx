@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import TagPill from './TagPill';
 import TagPicker from './TagPicker';
 
-export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTag }) {
+export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTag, onTimerStateChange }) {
   const [description, setDescription] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [elapsed, setElapsed] = useState(0);
@@ -40,7 +40,8 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
     api?.saveActiveTimer?.({ description: description.trim(), startTime });
     const started = Date.now();
     intervalRef.current = setInterval(() => { setElapsed(Date.now() - started); }, 1000);
-  }, [description, api]);
+    onTimerStateChange?.({ isRunning: true, description: description.trim(), elapsed: 0, startTime });
+  }, [description, api, onTimerStateChange]);
 
   const stopTimer = useCallback(async () => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -67,7 +68,8 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
     startTimeRef.current = null;
     inputRef.current?.focus();
     api?.clearActiveTimer?.();
-  }, [description, elapsed, activeTags, api, onEntrySaved]);
+    onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0 });
+  }, [description, elapsed, activeTags, api, onEntrySaved, onTimerStateChange]);
 
   const toggleTimer = useCallback(() => {
     if (isRunning) stopTimer(); else startTimer();
@@ -115,6 +117,36 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
     restore();
     return () => { cancelled = true; };
   }, [api]);
+
+  // Listen for control events from thumbbar and mini widget
+  useEffect(() => {
+    const handlePlayPause = () => toggleTimer();
+    const handleStop = () => stopTimer();
+    const handlePlay = () => { if (!isRunning) startTimer(); };
+    const handlePause = () => { if (isRunning) stopTimer(); };
+    const handleSetTaskDescription = (e) => { setDescription(e.detail); };
+
+    window.addEventListener('tracker-play-pause', handlePlayPause);
+    window.addEventListener('tracker-stop', handleStop);
+    window.addEventListener('tracker-play', handlePlay);
+    window.addEventListener('tracker-pause', handlePause);
+    window.addEventListener('set-task-description', handleSetTaskDescription);
+
+    return () => {
+      window.removeEventListener('tracker-play-pause', handlePlayPause);
+      window.removeEventListener('tracker-stop', handleStop);
+      window.removeEventListener('tracker-play', handlePlay);
+      window.removeEventListener('tracker-pause', handlePause);
+      window.removeEventListener('set-task-description', handleSetTaskDescription);
+    };
+  }, [toggleTimer, stopTimer, startTimer, isRunning]);
+
+  // Report elapsed time changes to parent
+  useEffect(() => {
+    if (isRunning) {
+      onTimerStateChange?.({ isRunning, description, elapsed, startTime: startTimeRef.current });
+    }
+  }, [elapsed, isRunning, description, onTimerStateChange]);
 
   // Format elapsed time
   const formatTime = ms => {

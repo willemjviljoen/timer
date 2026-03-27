@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import AuthButton from './AuthButton';
 
 export default function SettingsModal({ onClose, onSaved, updateInfo }) {
   const [threshold, setThreshold] = useState(120);
+  const [syncEnabled, setSyncEnabled] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState(null);
   const [saved, setSaved] = useState(false);
@@ -13,6 +15,7 @@ export default function SettingsModal({ onClose, onSaved, updateInfo }) {
   useEffect(() => {
     api?.getSettings?.().then(s => {
       setThreshold(s.notificationThresholdMinutes ?? 120);
+      setSyncEnabled(s.syncEnabled ?? false);
     }).catch(() => {});
   }, []);
 
@@ -25,7 +28,7 @@ export default function SettingsModal({ onClose, onSaved, updateInfo }) {
 
   const handleSave = async () => {
     const validated = Math.max(1, Math.min(999, Number(threshold) || 120));
-    await api?.saveSettings?.({ notificationThresholdMinutes: validated });
+    await api?.saveSettings?.({ notificationThresholdMinutes: validated, syncEnabled });
     setSaved(true);
     onSaved?.();
     setTimeout(() => { setSaved(false); onClose(); }, 700);
@@ -72,6 +75,26 @@ export default function SettingsModal({ onClose, onSaved, updateInfo }) {
         </div>
 
         <div className="modal__body settings__body">
+
+          {/* ── Cloud Sync ── */}
+          <div className="settings__section">
+            <h3 className="settings__section-title">Cloud Sync</h3>
+            <p className="settings__hint settings__hint--block">
+              Sync your timers and entries across devices in real time.
+            </p>
+            <div className="settings__row" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: syncEnabled ? 12 : 0 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: 'var(--text)' }}>
+                <input
+                  type="checkbox"
+                  checked={syncEnabled}
+                  onChange={e => setSyncEnabled(e.target.checked)}
+                  style={{ accentColor: 'var(--accent)' }}
+                />
+                Enable cloud sync
+              </label>
+            </div>
+            {syncEnabled && <AuthButton />}
+          </div>
 
           {/* ── Notifications ── */}
           <div className="settings__section">

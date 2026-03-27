@@ -40,7 +40,8 @@
     }
   },
   "dependencies": {
-    "better-sqlite3": "^12.8.0"
+    "better-sqlite3": "^12.8.0",
+    "firebase": "^12.11.0"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",

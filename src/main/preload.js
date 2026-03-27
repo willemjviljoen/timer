@@ -65,4 +65,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.removeAllListeners('thumbbar-settings');
     ipcRenderer.on('thumbbar-settings', () => callback());
   },
+
+  // ─── Auth ───────────────────────────────────────────────────────
+  signIn:       () => ipcRenderer.invoke('auth:sign-in'),
+  signOut:      () => ipcRenderer.invoke('auth:sign-out'),
+  getAuthState: () => ipcRenderer.invoke('auth:get-state'),
+  onAuthStateChanged: (callback) => {
+    ipcRenderer.removeAllListeners('auth:state-changed');
+    ipcRenderer.on('auth:state-changed', (_event, user) => callback(user));
+  },
+
+  // ─── Sync ───────────────────────────────────────────────────────
+  getSyncStatus: () => ipcRenderer.invoke('sync:get-status'),
+  onActiveTimerSync: (callback) => {
+    ipcRenderer.removeAllListeners('sync:active-timer-changed');
+    ipcRenderer.on('sync:active-timer-changed', (_event, data) => callback(data));
+  },
+  onEntriesSync: (callback) => {
+    ipcRenderer.removeAllListeners('sync:entries-updated');
+    ipcRenderer.on('sync:entries-updated', () => callback());
+  },
+  onTagsSync: (callback) => {
+    ipcRenderer.removeAllListeners('sync:tags-updated');
+    ipcRenderer.on('sync:tags-updated', () => callback());
+  },
+  onSyncConflict: (callback) => {
+    ipcRenderer.removeAllListeners('sync:conflict-resolved');
+    ipcRenderer.on('sync:conflict-resolved', (_event, message) => callback(message));
+  },
+  onSyncStatusChanged: (callback) => {
+    ipcRenderer.removeAllListeners('sync:status-changed');
+    ipcRenderer.on('sync:status-changed', (_event, status) => callback(status));
+  },
 });

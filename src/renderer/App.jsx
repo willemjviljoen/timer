@@ -169,6 +169,20 @@ export default function App() {
     });
   }, [api]);
 
+  // ─── Sync event listeners ─────────────────────────────────────
+  useEffect(() => {
+    // Refresh entries when another device creates/updates/deletes entries
+    api?.onEntriesSync?.(() => loadEntries());
+    // Refresh tags when another device creates/deletes tags
+    api?.onTagsSync?.(() => loadTags());
+    // Show a brief notification when a timer conflict was resolved
+    api?.onSyncConflict?.((message) => {
+      console.log('Sync conflict resolved:', message);
+      // Trigger a flash to indicate the auto-saved entry
+      flash();
+    });
+  }, [api, loadEntries, loadTags, flash]);
+
   const handleToggleMiniMode = useCallback(async () => {
     // Notify main process to resize window FIRST
     if (!miniMode) {

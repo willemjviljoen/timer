@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
+import AuthButton from './AuthButton';
+import SyncStatus from './SyncStatus';
 
 export default function TitleBar({ onOpenSettings, hasUpdate, onToggleMiniMode }) {
   const [pinned, setPinned] = useState(false);
   const [version, setVersion] = useState('');
+  const [syncEnabled, setSyncEnabled] = useState(false);
   const api = window.electronAPI;
 
   useEffect(() => {
@@ -10,6 +13,7 @@ export default function TitleBar({ onOpenSettings, hasUpdate, onToggleMiniMode }
       api.onAlwaysOnTopChanged((value) => setPinned(value));
     }
     api?.getVersion?.().then(v => setVersion(v)).catch(() => {});
+    api?.getSettings?.().then(s => setSyncEnabled(s?.syncEnabled ?? false)).catch(() => {});
   }, []);
 
   return (
@@ -20,6 +24,10 @@ export default function TitleBar({ onOpenSettings, hasUpdate, onToggleMiniMode }
       </div>
 
       <div className="titlebar__controls">
+        {/* Sync status + auth (only when sync is enabled in settings) */}
+        {syncEnabled && <SyncStatus />}
+        {syncEnabled && <AuthButton compact />}
+
         {/* Toggle Mini Mode */}
         <button
           className="titlebar__btn"

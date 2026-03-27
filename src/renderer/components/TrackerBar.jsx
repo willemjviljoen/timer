@@ -163,6 +163,37 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
     }
   }, [elapsed, isRunning, description, onTimerStateChange]);
 
+  // ── Remote sync: active timer changes from another device ───────
+  useEffect(() => {
+    if (!api?.onActiveTimerSync) return;
+    api.onActiveTimerSync((data) => {
+      if (data) {
+        // Remote device started or updated a timer — apply it locally
+        const startDate = new Date(data.startTime);
+        startTimeRef.current = data.startTime;
+        setDescription(data.description);
+        setIsRunning(true);
+        setShowSuggestions(false);
+        setShowTagPicker(false);
+        notificationFiredRef.current = false;
+        const offset = Date.now() - startDate.getTime();
+        setElapsed(offset);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        intervalRef.current = setInterval(() => { setElapsed(Date.now() - startDate.getTime()); }, 1000);
+        onTimerStateChange?.({ isRunning: true, description: data.description, elapsed: offset, startTime: data.startTime });
+      } else {
+        // Remote device stopped the timer
+        if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+        setIsRunning(false);
+        setElapsed(0);
+        setDescription('');
+        setActiveTags([]);
+        startTimeRef.current = null;
+        onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0 });
+      }
+    });
+  }, [api, onTimerStateChange]);
+
   // Format elapsed time
   const formatTime = ms => {
     const totalSeconds = Math.floor(ms / 1000);

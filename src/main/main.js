@@ -2,7 +2,10 @@ const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, dialog, Notificati
 const path = require('path');
 const fs   = require('fs');
 const https = require('https');
+const crypto = require('crypto');
 const Database = require('better-sqlite3');
+const { runMigrations } = require('./db-migrations');
+const auth = require('./auth');
 
 // Resolve assets folder whether running in dev or packaged
 function assetsPath(...segments) {
@@ -17,9 +20,10 @@ let tray = null;
 let db = null;
 let isQuitting = false;
 let timerState = { isRunning: false, description: '', elapsed: 0 };
+let syncEngine = null;
 
 // ─── Settings ────────────────────────────────────────────────────
-const DEFAULT_SETTINGS = { notificationThresholdMinutes: 120 };
+const DEFAULT_SETTINGS = { notificationThresholdMinutes: 120, syncEnabled: false };
 let settingsCache = null;
 
 function getSettingsPath() {
@@ -32,6 +36,11 @@ function loadSettings() {
     settingsCache = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
   } catch {
     settingsCache = { ...DEFAULT_SETTINGS };
+  }
+  // Ensure a unique device ID exists for sync
+  if (!settingsCache.deviceId) {
+    settingsCache.deviceId = crypto.randomUUID();
+    writeSettings(settingsCache);
   }
   return settingsCache;
 }
@@ -88,6 +97,9 @@ function initDatabase() {
     );
   `);
 
+  // Run sync-related schema migrations
+  runMigrations(db);
+
   console.log(`Database opened at: ${dbPath}`);
 }
 
@@ -95,15 +107,19 @@ function initDatabase() {
 function registerIPC() {
   // Save a completed time entry
   ipcMain.handle('save-entry', (_event, entry) => {
+    const uuid = entry.uuid || crypto.randomUUID();
+    const now  = new Date().toISOString();
     const stmt = db.prepare(`
-      INSERT INTO time_entries (description, start_time, end_time, duration_ms)
-      VALUES (@description, @startTime, @endTime, @durationMs)
+      INSERT INTO time_entries (description, start_time, end_time, duration_ms, uuid, updated_at)
+      VALUES (@description, @startTime, @endTime, @durationMs, @uuid, @updatedAt)
     `);
     const result = stmt.run({
       description: entry.description,
       startTime:   entry.startTime,
       endTime:     entry.endTime,
       durationMs:  entry.durationMs,
+      uuid,
+      updatedAt:   now,
     });
     const entryId = result.lastInsertRowid;
 
@@ -113,17 +129,20 @@ function registerIPC() {
       tx(entryId, entry.tagIds);
     }
 
-    return { id: entryId };
+    syncEngine?.pushEntry(uuid);
+    return { id: entryId, uuid };
   });
 
   // Update an existing time entry
   ipcMain.handle('update-entry', (_event, entry) => {
+    const now = new Date().toISOString();
     db.prepare(`
       UPDATE time_entries
       SET start_time  = @startTime,
           end_time    = @endTime,
           duration_ms = @durationMs,
-          description = @description
+          description = @description,
+          updated_at  = @updatedAt
       WHERE id = @id
     `).run({
       id:          entry.id,
@@ -131,6 +150,7 @@ function registerIPC() {
       endTime:     entry.endTime,
       durationMs:  entry.durationMs,
       description: entry.description,
+      updatedAt:   now,
     });
 
     if (Array.isArray(entry.tagIds)) {
@@ -140,13 +160,19 @@ function registerIPC() {
       tx(entry.id, entry.tagIds);
     }
 
+    // Look up the uuid for sync
+    const row = db.prepare('SELECT uuid FROM time_entries WHERE id = ?').get(entry.id);
+    if (row?.uuid) syncEngine?.pushEntry(row.uuid);
+
     return { success: true };
   });
 
-  // Delete a time entry
+  // Delete a time entry (soft delete for sync)
   ipcMain.handle('delete-entry', (_event, id) => {
-    const stmt = db.prepare('DELETE FROM time_entries WHERE id = ?');
-    stmt.run(id);
+    const now = new Date().toISOString();
+    const row = db.prepare('SELECT uuid FROM time_entries WHERE id = ?').get(id);
+    db.prepare('UPDATE time_entries SET deleted = 1, updated_at = ? WHERE id = ?').run(now, id);
+    if (row?.uuid) syncEngine?.pushEntry(row.uuid);
     return { success: true };
   });
 
@@ -157,6 +183,11 @@ function registerIPC() {
       VALUES (1, @description, @startTime)
     `);
     stmt.run({ description: timer.description, startTime: timer.startTime });
+    syncEngine?.pushActiveTimer({
+      description: timer.description,
+      startTime:   timer.startTime,
+      tagIds:      timer.tagIds || [],
+    });
     return { success: true };
   });
 
@@ -169,6 +200,7 @@ function registerIPC() {
   // Clear active timer state (when stopped normally)
   ipcMain.handle('clear-active-timer', () => {
     db.prepare('DELETE FROM active_timer WHERE id = 1').run();
+    syncEngine?.pushActiveTimer(null);
     return { success: true };
   });
 
@@ -177,7 +209,7 @@ function registerIPC() {
     const stmt = db.prepare(`
       SELECT description, MAX(created_at) as last_used, COUNT(*) as use_count
       FROM time_entries
-      WHERE description LIKE @query ESCAPE '\\'
+      WHERE description LIKE @query ESCAPE '\\' AND deleted = 0
       GROUP BY description
       ORDER BY last_used DESC
       LIMIT 10
@@ -189,8 +221,9 @@ function registerIPC() {
   // Get recent entries for history view (with tag IDs)
   ipcMain.handle('get-recent-entries', (_event, limit = 50) => {
     const entries = db.prepare(`
-      SELECT id, description, start_time, end_time, duration_ms, created_at
+      SELECT id, description, start_time, end_time, duration_ms, created_at, uuid
       FROM time_entries
+      WHERE deleted = 0
       ORDER BY created_at DESC
       LIMIT ?
     `).all(limit);
@@ -235,6 +268,7 @@ function registerIPC() {
     const entries = db.prepare(`
       SELECT id, description, start_time, end_time, duration_ms, created_at
       FROM time_entries
+      WHERE deleted = 0
       ORDER BY created_at DESC
     `).all();
 
@@ -315,17 +349,25 @@ function registerIPC() {
 
   // ─── Tags ─────────────────────────────────────────────────────
   ipcMain.handle('get-tags', () => {
-    return db.prepare('SELECT id, name, color FROM tags ORDER BY name').all();
+    return db.prepare('SELECT id, name, color, uuid FROM tags WHERE deleted = 0 ORDER BY name').all();
   });
 
   ipcMain.handle('create-tag', (_event, { name, color }) => {
-    const stmt = db.prepare('INSERT INTO tags (name, color) VALUES (@name, @color)');
-    const result = stmt.run({ name, color });
-    return { id: result.lastInsertRowid, name, color };
+    const uuid = crypto.randomUUID();
+    const now  = new Date().toISOString();
+    const stmt = db.prepare('INSERT INTO tags (name, color, uuid, updated_at) VALUES (@name, @color, @uuid, @updatedAt)');
+    const result = stmt.run({ name, color, uuid, updatedAt: now });
+    syncEngine?.pushTag(uuid);
+    return { id: result.lastInsertRowid, name, color, uuid };
   });
 
   ipcMain.handle('delete-tag', (_event, id) => {
-    db.prepare('DELETE FROM tags WHERE id = ?').run(id);
+    const now = new Date().toISOString();
+    const row = db.prepare('SELECT uuid FROM tags WHERE id = ?').get(id);
+    db.prepare('UPDATE tags SET deleted = 1, updated_at = ? WHERE id = ?').run(now, id);
+    // Also clean up entry_tags references
+    db.prepare('DELETE FROM entry_tags WHERE tag_id = ?').run(id);
+    if (row?.uuid) syncEngine?.pushTag(row.uuid);
     return { success: true };
   });
 
@@ -357,6 +399,39 @@ function registerIPC() {
   ipcMain.handle('update-timer-state', (_event, state) => {
     timerState = state;
     return { ok: true };
+  });
+
+  // ─── Auth ───────────────────────────────────────────────────────
+  ipcMain.handle('auth:sign-in', async () => {
+    try {
+      const user = await auth.signIn();
+      // Ensure syncEnabled is saved when user signs in
+      const currentSettings = loadSettings();
+      if (!currentSettings.syncEnabled) {
+        writeSettings({ ...currentSettings, syncEnabled: true });
+      }
+      return { ok: true, user };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('auth:sign-out', async () => {
+    if (syncEngine) {
+      syncEngine.stop();
+      syncEngine = null;
+    }
+    await auth.signOut();
+    return { ok: true };
+  });
+
+  ipcMain.handle('auth:get-state', () => {
+    return auth.getAuthState();
+  });
+
+  ipcMain.handle('sync:get-status', () => {
+    if (!syncEngine) return { state: 'disconnected' };
+    return syncEngine.getStatus();
   });
 }
 
@@ -470,6 +545,71 @@ function createWindow() {
   });
 }
 
+// ─── Sync Lifecycle ─────────────────────────────────────────────
+async function initSync() {
+  const { initFirebase, getFirebaseFirestore, getFirebaseRtdb } = require('./firebase');
+  const { SyncEngine } = require('./sync');
+
+  // Listen for auth state changes to start/stop sync
+  auth.onAuthStateChanged((user) => {
+    // Forward auth state to renderer
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('auth:state-changed', user);
+    }
+
+    if (user) {
+      // User signed in — start sync
+      const { firestore, rtdb } = initFirebase();
+      const settings = loadSettings();
+      syncEngine = new SyncEngine({
+        db,
+        firestore,
+        rtdb,
+        uid:      user.uid,
+        deviceId: settings.deviceId,
+        onActiveTimerChanged: (data) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sync:active-timer-changed', data);
+          }
+        },
+        onEntriesUpdated: () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sync:entries-updated');
+          }
+        },
+        onTagsUpdated: () => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sync:tags-updated');
+          }
+        },
+        onConflictResolved: (message) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sync:conflict-resolved', message);
+          }
+        },
+        onStatusChanged: (status) => {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sync:status-changed', status);
+          }
+        },
+      });
+      syncEngine.start();
+    } else {
+      // User signed out — stop sync
+      if (syncEngine) {
+        syncEngine.stop();
+        syncEngine = null;
+      }
+    }
+  });
+
+  // Only attempt silent sign-in if sync is enabled in settings
+  const settings = loadSettings();
+  if (settings.syncEnabled) {
+    await auth.trySilentSignIn();
+  }
+}
+
 // ─── App Lifecycle ───────────────────────────────────────────────
 app.whenReady().then(() => {
   loadSettings();
@@ -477,10 +617,16 @@ app.whenReady().then(() => {
   registerIPC();
   createTray();
   createWindow();
+  // Start sync in background (non-blocking)
+  initSync().catch(err => console.warn('Sync init error:', err.message));
 });
 
 app.on('before-quit', () => {
   isQuitting = true;
+  if (syncEngine) {
+    syncEngine.stop();
+    syncEngine = null;
+  }
   if (db) db.close();
 });
 

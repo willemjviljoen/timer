@@ -89,7 +89,14 @@ export default function DayCalendar({ entries, allTags, timerState, calendarDate
   const [filterTags, setFilterTags] = useState([]);
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 14 * ROW_H;
+    if (!scrollRef.current) return;
+    if (isSameDay(calendarDate, new Date())) {
+      const nowSlot = (new Date().getHours() * 60 + new Date().getMinutes()) / 30;
+      const target = nowSlot * ROW_H - scrollRef.current.clientHeight / 2;
+      scrollRef.current.scrollTop = Math.max(0, target);
+    } else {
+      scrollRef.current.scrollTop = 14 * ROW_H;
+    }
   }, [calendarDate]);
 
   const allDayEntries = entries

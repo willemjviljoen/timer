@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const Database = require('better-sqlite3');
 const { runMigrations } = require('./db-migrations');
 const auth = require('./auth');
+const { compareSemver, esc, pad } = require('./utils');
 
 // Resolve assets folder whether running in dev or packaged
 function assetsPath(...segments) {
@@ -272,9 +273,6 @@ function registerIPC() {
       ORDER BY created_at DESC
     `).all();
 
-    const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
-    const pad = (n) => String(n).padStart(2, '0');
-
     const tagMap = {};
     for (const tag of db.prepare('SELECT id, name FROM tags').all()) {
       tagMap[tag.id] = tag.name;
@@ -312,14 +310,6 @@ function registerIPC() {
             const release = JSON.parse(data);
             const latestTag  = (release.tag_name || '').replace(/^v/, '');
             const currentVer = app.getVersion();
-            const compareSemver = (a, b) => {
-              const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
-              for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-                const diff = (pa[i] || 0) - (pb[i] || 0);
-                if (diff !== 0) return diff;
-              }
-              return 0;
-            };
             const hasUpdate  = latestTag && compareSemver(latestTag, currentVer) > 0;
             resolve({
               ok: true,

@@ -10,7 +10,9 @@
     "dev": "concurrently \"npx webpack serve --config webpack.config.js\" \"wait-on http://localhost:9000 && electron .\"",
     "build": "npx webpack --config webpack.config.js --mode production",
     "pack": "electron-builder --dir",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "build": {
     "appId": "com.timetracker.app",
@@ -57,6 +59,7 @@
     "react-dom": "^19.1.0",
     "sharp": "^0.34.5",
     "style-loader": "^4.0.0",
+    "vitest": "^4.1.2",
     "wait-on": "^8.0.3",
     "webpack": "^5.98.0",
     "webpack-cli": "^6.0.1",

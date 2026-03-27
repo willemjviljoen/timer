@@ -1,17 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import TagPill from './TagPill';
 import TagPicker from './TagPicker';
-
-function toLocalDatetime(isoString) {
-  try {
-    const d = new Date(isoString);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  } catch { return ''; }
-}
-
-function fromLocalDatetime(localStr) {
-  try { return new Date(localStr).toISOString(); } catch { return ''; }
-}
+import { toLocalDatetime, fromLocalDatetime } from '../utils/formatting';
 
 export default function EditModal({ entry, onSave, onCancel, allTags, onCreateTag, isNew = false }) {
   const isActive = entry._isActive === true;

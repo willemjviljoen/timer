@@ -1,5 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import TagPill from './TagPill';
+import { pad, minsToTime, isSameDay, formatDateFull, fmtDur, formatTimeShort as fmtTimeShort } from '../utils/formatting';
+import { entryMinutes, computeOverlapLayout } from '../utils/calendar';
 
 const V = {
   bg: '#0a0a0a', bgSurface: '#141414', bgInput: '#1a1a1a', bgHover: '#222',
@@ -15,70 +17,6 @@ const GRID_RIGHT = 12;
 const WORK_START = 7 * 60;
 const WORK_END = 19 * 60;
 const MIN_GAP = 15;
-
-function pad(n) { return String(n).padStart(2, '0'); }
-function minsToTime(mins) { return `${pad(Math.floor(mins / 60))}:${pad(mins % 60)}`; }
-function isSameDay(d1, d2) {
-  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
-}
-function formatDateFull(d) {
-  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
-}
-function fmtDur(ms) {
-  const t = Math.floor(ms / 1000), d = Math.floor(t / 86400), h = Math.floor((t % 86400) / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
-  return d > 0 ? `${pad(d)}d ${pad(h)}h ${pad(m)}m` : `${pad(h)}h ${pad(m)}m ${pad(s)}s`;
-}
-function fmtTimeShort(iso) {
-  try { return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
-}
-
-function entryMinutes(e, calendarDate) {
-  const s = new Date(e.start_time), en = new Date(e.end_time);
-  const startMin = isSameDay(s, calendarDate) ? s.getHours() * 60 + s.getMinutes() : 0;
-  const endMin = isSameDay(en, calendarDate) ? en.getHours() * 60 + en.getMinutes() : 24 * 60;
-  return { startMin, endMin: Math.max(endMin, startMin + 1) };
-}
-
-function computeOverlapLayout(dayEntries, calendarDate) {
-  const items = dayEntries.map(e => {
-    const { startMin, endMin } = entryMinutes(e, calendarDate);
-    return { id: e.id, startMin, endMin };
-  }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
-
-  const clusters = [];
-  for (const item of items) {
-    let placed = false;
-    for (const cluster of clusters) {
-      if (item.startMin < cluster.endMin) {
-        cluster.items.push(item);
-        cluster.endMin = Math.max(cluster.endMin, item.endMin);
-        placed = true;
-        break;
-      }
-    }
-    if (!placed) clusters.push({ items: [item], endMin: item.endMin });
-  }
-
-  const layout = {};
-  for (const cluster of clusters) {
-    const columns = [];
-    for (const item of cluster.items) {
-      let placed = false;
-      for (let c = 0; c < columns.length; c++) {
-        if (item.startMin >= columns[c]) {
-          columns[c] = item.endMin;
-          layout[item.id] = { col: c, totalCols: 0 };
-          placed = true;
-          break;
-        }
-      }
-      if (!placed) { layout[item.id] = { col: columns.length, totalCols: 0 }; columns.push(item.endMin); }
-    }
-    const totalCols = columns.length;
-    for (const item of cluster.items) layout[item.id].totalCols = totalCols;
-  }
-  return layout;
-}
 
 const ACTIVE_TIMER_ID = '__active_timer__';
 

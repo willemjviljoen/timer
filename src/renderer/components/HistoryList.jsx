@@ -1,23 +1,7 @@
 import React, { useState } from 'react';
 import TagPill from './TagPill';
 import DayCalendar from './DayCalendar';
-
-function formatDuration(ms) {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  const pad = n => String(n).padStart(2, '0');
-  return `${pad(hours)}h ${pad(minutes)}m ${pad(seconds)}s`;
-}
-
-function formatDate(isoString) {
-  try { return new Date(isoString).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); } catch { return ''; }
-}
-
-function formatTimeShort(isoString) {
-  try { return new Date(isoString).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
-}
+import { formatDuration, formatDate, formatTimeShort } from '../utils/formatting';
 
 export default function HistoryList({ entries, allTags, timerState, onEdit, onDelete, onCreateFromGap, onLoadMore }) {
   const [activeTab, setActiveTab] = useState('list');

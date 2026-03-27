@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import TagPill from './TagPill';
 import TagPicker from './TagPicker';
+import { formatTime } from '../utils/formatting';
 
 export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTag, onTimerStateChange }) {
   const [description, setDescription] = useState('');
@@ -194,15 +195,6 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
     });
   }, [api, onTimerStateChange]);
 
-  // Format elapsed time
-  const formatTime = ms => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const p = n => String(n).padStart(2, '0');
-    return { hours: p(hours), minutes: p(minutes), seconds: p(seconds) };
-  };
   const time = formatTime(elapsed);
 
   // Autocomplete

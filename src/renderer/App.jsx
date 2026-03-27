@@ -181,14 +181,15 @@ export default function App() {
         // Mini mode - only show the widget, but keep TrackerBar hidden for event handling
         <>
           <MiniWidget timerState={timerState} onToggleMode={handleToggleMiniMode} />
-          <TrackerBar
-            onEntrySaved={handleEntrySaved}
-            settings={settings}
-            allTags={allTags}
-            onCreateTag={handleCreateTag}
-            onTimerStateChange={setTimerState}
-            style={{ display: 'none' }}
-          />
+          <div style={{ display: 'none' }}>
+            <TrackerBar
+              onEntrySaved={handleEntrySaved}
+              settings={settings}
+              allTags={allTags}
+              onCreateTag={handleCreateTag}
+              onTimerStateChange={setTimerState}
+            />
+          </div>
         </>
       ) : (
         // Full mode

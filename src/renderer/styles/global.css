@@ -25,6 +25,11 @@
   --radius:         6px;
   --font-mono:      'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
   --font-sans:      'Manrope', system-ui, sans-serif;
+  /* Aliases used by newer components */
+  --text:           #f0f0f0;
+  --text-sec:       #888888;
+  --red:            #ef4444;
+  --bg:             #0a0a0a;
 }
 
 html, body, #root {
@@ -891,3 +896,35 @@ kbd {
 .settings__update-link:hover {
   color: var(--accent-hover);
 }
+
+/* ── CSS variable aliases (for new components) ── */
+:root {
+  --bg: var(--bg-primary);
+  --text: var(--text-primary);
+  --text-sec: var(--text-secondary);
+}
+
+/* ── Window height for calendar ── */
+.app-root {
+  height: 100vh;
+}
+
+/* ── Tab bar ── */
+.tab-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* ── Tag pill animations ── */
+@keyframes dropIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Calendar grid scrollbar ── */
+.calendar-scroll::-webkit-scrollbar { width: 4px; }
+.calendar-scroll::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }

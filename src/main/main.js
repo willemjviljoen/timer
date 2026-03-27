@@ -50,6 +50,7 @@ function initDatabase() {
   db = new Database(dbPath);
 
   db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS time_entries (
@@ -71,6 +72,21 @@ function initDatabase() {
     );
   `);
 
+  // ─── Tags migration (additive — never drops existing data) ────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tags (
+      id    INTEGER PRIMARY KEY AUTOINCREMENT,
+      name  TEXT    NOT NULL UNIQUE,
+      color TEXT    NOT NULL DEFAULT '#e85d04'
+    );
+
+    CREATE TABLE IF NOT EXISTS entry_tags (
+      entry_id INTEGER NOT NULL REFERENCES time_entries(id) ON DELETE CASCADE,
+      tag_id   INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+      PRIMARY KEY (entry_id, tag_id)
+    );
+  `);
+
   console.log(`Database opened at: ${dbPath}`);
 }
 
@@ -88,26 +104,41 @@ function registerIPC() {
       endTime:     entry.endTime,
       durationMs:  entry.durationMs,
     });
-    return { id: result.lastInsertRowid };
+    const entryId = result.lastInsertRowid;
+
+    if (Array.isArray(entry.tagIds) && entry.tagIds.length > 0) {
+      const ins = db.prepare('INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?, ?)');
+      const tx  = db.transaction((eid, ids) => { for (const tid of ids) ins.run(eid, tid); });
+      tx(entryId, entry.tagIds);
+    }
+
+    return { id: entryId };
   });
 
   // Update an existing time entry
   ipcMain.handle('update-entry', (_event, entry) => {
-    const stmt = db.prepare(`
+    db.prepare(`
       UPDATE time_entries
-      SET start_time = @startTime,
-          end_time   = @endTime,
+      SET start_time  = @startTime,
+          end_time    = @endTime,
           duration_ms = @durationMs,
           description = @description
       WHERE id = @id
-    `);
-    stmt.run({
+    `).run({
       id:          entry.id,
       startTime:   entry.startTime,
       endTime:     entry.endTime,
       durationMs:  entry.durationMs,
       description: entry.description,
     });
+
+    if (Array.isArray(entry.tagIds)) {
+      const del = db.prepare('DELETE FROM entry_tags WHERE entry_id = ?');
+      const ins = db.prepare('INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?, ?)');
+      const tx  = db.transaction((eid, ids) => { del.run(eid); for (const tid of ids) ins.run(eid, tid); });
+      tx(entry.id, entry.tagIds);
+    }
+
     return { success: true };
   });
 
@@ -153,15 +184,20 @@ function registerIPC() {
     return stmt.all({ query: `%${query}%` });
   });
 
-  // Get recent entries for history view
+  // Get recent entries for history view (with tag IDs)
   ipcMain.handle('get-recent-entries', (_event, limit = 50) => {
-    const stmt = db.prepare(`
+    const entries = db.prepare(`
       SELECT id, description, start_time, end_time, duration_ms, created_at
       FROM time_entries
       ORDER BY created_at DESC
       LIMIT ?
-    `);
-    return stmt.all(limit);
+    `).all(limit);
+
+    const tagStmt = db.prepare('SELECT tag_id FROM entry_tags WHERE entry_id = ?');
+    return entries.map(e => ({
+      ...e,
+      tags: tagStmt.all(e.id).map(r => r.tag_id),
+    }));
   });
 
   // App version
@@ -203,13 +239,20 @@ function registerIPC() {
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const pad = (n) => String(n).padStart(2, '0');
 
-    const lines = ['Description,Start Time,End Time,Duration (ms),Duration (hh:mm:ss),Created At'];
+    const tagMap = {};
+    for (const tag of db.prepare('SELECT id, name FROM tags').all()) {
+      tagMap[tag.id] = tag.name;
+    }
+    const entryTagStmt = db.prepare('SELECT tag_id FROM entry_tags WHERE entry_id = ?');
+
+    const lines = ['Description,Tags,Start Time,End Time,Duration (ms),Duration (hh:mm:ss),Created At'];
     for (const e of entries) {
+      const tagNames = entryTagStmt.all(e.id).map(r => tagMap[r.tag_id] || '').filter(Boolean).join('; ');
       const h = Math.floor(e.duration_ms / 3600000);
       const m = Math.floor((e.duration_ms % 3600000) / 60000);
       const s = Math.floor((e.duration_ms % 60000) / 1000);
       const dur = `${pad(h)}:${pad(m)}:${pad(s)}`;
-      lines.push([esc(e.description), esc(e.start_time), esc(e.end_time), e.duration_ms, esc(dur), esc(e.created_at)].join(','));
+      lines.push([esc(e.description), esc(tagNames), esc(e.start_time), esc(e.end_time), e.duration_ms, esc(dur), esc(e.created_at)].join(','));
     }
 
     fs.writeFileSync(result.filePath, lines.join('\r\n'), 'utf-8');
@@ -256,6 +299,37 @@ function registerIPC() {
     shell.openExternal(url);
     return { ok: true };
   });
+
+  // ─── Tags ─────────────────────────────────────────────────────
+  ipcMain.handle('get-tags', () => {
+    return db.prepare('SELECT id, name, color FROM tags ORDER BY name').all();
+  });
+
+  ipcMain.handle('create-tag', (_event, { name, color }) => {
+    const stmt = db.prepare('INSERT INTO tags (name, color) VALUES (@name, @color)');
+    const result = stmt.run({ name, color });
+    return { id: result.lastInsertRowid, name, color };
+  });
+
+  ipcMain.handle('delete-tag', (_event, id) => {
+    db.prepare('DELETE FROM tags WHERE id = ?').run(id);
+    return { success: true };
+  });
+
+  ipcMain.handle('set-entry-tags', (_event, { entryId, tagIds }) => {
+    const del = db.prepare('DELETE FROM entry_tags WHERE entry_id = ?');
+    const ins = db.prepare('INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) VALUES (?, ?)');
+    const tx  = db.transaction((eid, ids) => {
+      del.run(eid);
+      for (const tid of ids) ins.run(eid, tid);
+    });
+    tx(entryId, tagIds);
+    return { success: true };
+  });
+
+  ipcMain.handle('get-entry-tags', (_event, entryId) => {
+    return db.prepare('SELECT tag_id FROM entry_tags WHERE entry_id = ?').all(entryId).map(r => r.tag_id);
+  });
 }
 
 // ─── Tray ────────────────────────────────────────────────────────
@@ -300,11 +374,11 @@ function createWindow() {
   const isDev = !app.isPackaged;
 
   mainWindow = new BrowserWindow({
-    width: 680,
-    height: 480,
+    width: 720,
+    height: 680,
     minWidth: 520,
-    minHeight: 200,
-    maxHeight: 800,
+    minHeight: 300,
+    maxHeight: 1000,
     frame: false,
     transparent: false,
     resizable: true,

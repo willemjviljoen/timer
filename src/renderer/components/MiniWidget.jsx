@@ -4,8 +4,10 @@ export default function MiniWidget({ timerState, onToggleMode }) {
   const [displayTime, setDisplayTime] = useState('00:00:00');
   const [showTaskInput, setShowTaskInput] = useState(false);
   const [taskInput, setTaskInput] = useState('');
+  const [isPinned, setIsPinned] = useState(false);
   const intervalRef = useRef(null);
   const inputRef = useRef(null);
+  const api = window.electronAPI;
 
   // Update display time every 100ms when running
   useEffect(() => {
@@ -84,6 +86,17 @@ export default function MiniWidget({ timerState, onToggleMode }) {
     }
   }, [showTaskInput]);
 
+  // Listen for always-on-top state changes
+  useEffect(() => {
+    api?.onAlwaysOnTopChanged?.((value) => {
+      setIsPinned(value);
+    });
+  }, [api]);
+
+  const handleTogglePin = () => {
+    api?.toggleAlwaysOnTop?.();
+  };
+
   return (
     <div
       style={{
@@ -99,7 +112,7 @@ export default function MiniWidget({ timerState, onToggleMode }) {
         color: '#fff',
       }}
     >
-      {/* Header with expand button - draggable area */}
+      {/* Header with controls - draggable area */}
       <div
         style={{
           display: 'flex',
@@ -111,29 +124,56 @@ export default function MiniWidget({ timerState, onToggleMode }) {
         }}
       >
         <div style={{ fontSize: '10px', color: '#666', fontWeight: 'bold' }}>TIMER</div>
-        <button
-          onClick={handleToggleMode}
-          style={{
-            background: 'none',
-            border: 'none',
-            color: '#999',
-            cursor: 'pointer',
-            fontSize: '14px',
-            padding: '0',
-            width: '16px',
-            height: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'color 0.2s',
-            WebkitAppRegion: 'no-drag',
-          }}
-          onMouseEnter={(e) => { e.target.style.color = '#fff'; }}
-          onMouseLeave={(e) => { e.target.style.color = '#999'; }}
-          title="Expand to full mode"
-        >
-          ⛶
-        </button>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {/* Pin button */}
+          <button
+            onClick={handleTogglePin}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: isPinned ? '#06a77d' : '#999',
+              cursor: 'pointer',
+              fontSize: '12px',
+              padding: '0',
+              width: '14px',
+              height: '14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.2s',
+              WebkitAppRegion: 'no-drag',
+            }}
+            onMouseEnter={(e) => { e.target.style.color = '#fff'; }}
+            onMouseLeave={(e) => { e.target.style.color = isPinned ? '#06a77d' : '#999'; }}
+            title={isPinned ? 'Unpin from top' : 'Pin on top'}
+          >
+            📌
+          </button>
+          {/* Expand button */}
+          <button
+            onClick={handleToggleMode}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: '#999',
+              cursor: 'pointer',
+              fontSize: '14px',
+              padding: '0',
+              width: '16px',
+              height: '16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'color 0.2s',
+              WebkitAppRegion: 'no-drag',
+            }}
+            onMouseEnter={(e) => { e.target.style.color = '#fff'; }}
+            onMouseLeave={(e) => { e.target.style.color = '#999'; }}
+            title="Expand to full mode"
+          >
+            ⛶
+          </button>
+        </div>
       </div>
 
       {/* Timer Display */}

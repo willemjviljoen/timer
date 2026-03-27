@@ -13,10 +13,6 @@ export default function MiniWidget({ timerState, onToggleMode }) {
   useEffect(() => {
     const updateDisplay = () => {
       let total = timerState?.elapsed || 0;
-      if (timerState?.isRunning && timerState?.startTime) {
-        const startDate = new Date(timerState.startTime);
-        total += Date.now() - startDate.getTime();
-      }
       const seconds = Math.floor(total / 1000) % 60;
       const minutes = Math.floor(total / 60000) % 60;
       const hours = Math.floor(total / 3600000);

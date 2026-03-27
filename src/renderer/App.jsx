@@ -38,6 +38,15 @@ export default function App() {
     }
   }, [api]);
 
+  const loadMoreEntries = useCallback(async () => {
+    if (api?.getRecentEntries) {
+      try {
+        const data = await api.getRecentEntries(entries.length + 50);
+        setEntries(data);
+      } catch (err) { console.error('Failed to load more entries:', err); }
+    }
+  }, [api, entries.length]);
+
   const loadTags = useCallback(async () => {
     if (api?.getTags) {
       try { const tags = await api.getTags(); setAllTags(tags); } catch {}
@@ -129,6 +138,15 @@ export default function App() {
     api?.updateTimerState?.(timerState);
   }, [timerState, api]);
 
+  // Ctrl+W to close to tray
+  useEffect(() => {
+    const handler = e => {
+      if (e.ctrlKey && e.key === 'w') { e.preventDefault(); api?.closeWindow?.(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [api]);
+
   // Listen for thumbbar control events
   useEffect(() => {
     api?.onThumbbarPlayPause?.(() => {
@@ -193,6 +211,7 @@ export default function App() {
             onEdit={entry => { setEditingEntry(entry); setIsNewEntry(false); }}
             onDelete={entry => setDeletingEntry(entry)}
             onCreateFromGap={handleCreateFromGap}
+            onLoadMore={loadMoreEntries}
           />
         </>
       )}

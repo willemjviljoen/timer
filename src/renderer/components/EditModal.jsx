@@ -92,7 +92,7 @@ export default function EditModal({ entry, onSave, onCancel, allTags, onCreateTa
                     allTags={allTags}
                     selectedTagIds={entryTags}
                     onToggle={id => setEntryTags(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id])}
-                    onCreate={(name, color) => { const t = onCreateTag(name, color); setEntryTags(prev => [...prev, t.id]); }}
+                    onCreate={async (name, color) => { const t = await onCreateTag(name, color); if (t?.id) setEntryTags(prev => [...prev, t.id]); }}
                     onClose={() => setShowPicker(false)}
                   />
                 )}

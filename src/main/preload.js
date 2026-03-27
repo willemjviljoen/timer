@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Listen for events from main
   onAlwaysOnTopChanged: (callback) => {
+    ipcRenderer.removeAllListeners('always-on-top-changed');
     ipcRenderer.on('always-on-top-changed', (_event, value) => callback(value));
   },
 
@@ -53,12 +54,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Timer state and controls
   updateTimerState: (state) => ipcRenderer.invoke('update-timer-state', state),
   onThumbbarPlayPause: (callback) => {
+    ipcRenderer.removeAllListeners('thumbbar-play-pause');
     ipcRenderer.on('thumbbar-play-pause', () => callback());
   },
   onThumbbarStop: (callback) => {
+    ipcRenderer.removeAllListeners('thumbbar-stop');
     ipcRenderer.on('thumbbar-stop', () => callback());
   },
   onThumbbarSettings: (callback) => {
+    ipcRenderer.removeAllListeners('thumbbar-settings');
     ipcRenderer.on('thumbbar-settings', () => callback());
   },
 });

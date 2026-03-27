@@ -177,12 +177,13 @@ function registerIPC() {
     const stmt = db.prepare(`
       SELECT description, MAX(created_at) as last_used, COUNT(*) as use_count
       FROM time_entries
-      WHERE description LIKE @query
+      WHERE description LIKE @query ESCAPE '\\'
       GROUP BY description
       ORDER BY last_used DESC
       LIMIT 10
     `);
-    return stmt.all({ query: `%${query}%` });
+    const escaped = query.replace(/[%_\\]/g, '\\$&');
+    return stmt.all({ query: `%${escaped}%` });
   });
 
   // Get recent entries for history view (with tag IDs)
@@ -232,7 +233,7 @@ function registerIPC() {
     }
 
     const entries = db.prepare(`
-      SELECT description, start_time, end_time, duration_ms, created_at
+      SELECT id, description, start_time, end_time, duration_ms, created_at
       FROM time_entries
       ORDER BY created_at DESC
     `).all();
@@ -277,7 +278,15 @@ function registerIPC() {
             const release = JSON.parse(data);
             const latestTag  = (release.tag_name || '').replace(/^v/, '');
             const currentVer = app.getVersion();
-            const hasUpdate  = latestTag && latestTag !== currentVer;
+            const compareSemver = (a, b) => {
+              const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+              for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                const diff = (pa[i] || 0) - (pb[i] || 0);
+                if (diff !== 0) return diff;
+              }
+              return 0;
+            };
+            const hasUpdate  = latestTag && compareSemver(latestTag, currentVer) > 0;
             resolve({
               ok: true,
               hasUpdate,
@@ -295,10 +304,13 @@ function registerIPC() {
     });
   });
 
-  // Open a URL in the default browser
+  // Open a URL in the default browser (only allow http/https)
   ipcMain.handle('open-external', (_event, url) => {
-    shell.openExternal(url);
-    return { ok: true };
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
+      shell.openExternal(url);
+      return { ok: true };
+    }
+    return { ok: false, error: 'Only http/https URLs are allowed' };
   });
 
   // ─── Tags ─────────────────────────────────────────────────────
@@ -425,13 +437,6 @@ function createWindow() {
 
   // Setup thumbnail toolbar buttons (Windows)
   if (process.platform === 'win32') {
-    // Create simple icons as nativeImage
-    const createSimpleIcon = (unicode) => {
-      const canvas = require('canvas') ? null : undefined;
-      // Fallback: use transparent placeholder (Electron will handle button display)
-      return nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 });
-    };
-
     try {
       mainWindow.setThumbarButtons([
         {

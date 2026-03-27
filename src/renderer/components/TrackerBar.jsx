@@ -46,7 +46,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
   const stopTimer = useCallback(async () => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     const endTime = new Date().toISOString();
-    const durationMs = elapsed;
+    const durationMs = startTimeRef.current ? Date.now() - new Date(startTimeRef.current).getTime() : elapsed;
     if (api?.saveEntry) {
       try {
         await api.saveEntry({
@@ -263,7 +263,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
                 allTags={allTags}
                 selectedTagIds={activeTags}
                 onToggle={id => setActiveTags(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id])}
-                onCreate={(name, color) => { const t = handleCreateTag(name, color); setActiveTags(prev => [...prev, t.id]); }}
+                onCreate={async (name, color) => { const t = await handleCreateTag(name, color); if (t?.id) setActiveTags(prev => [...prev, t.id]); }}
                 onClose={() => setShowTagPicker(false)}
               />
             )}

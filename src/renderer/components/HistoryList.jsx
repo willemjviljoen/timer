@@ -19,7 +19,7 @@ function formatTimeShort(isoString) {
   try { return new Date(isoString).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
-export default function HistoryList({ entries, allTags, onEdit, onDelete, onCreateFromGap }) {
+export default function HistoryList({ entries, allTags, onEdit, onDelete, onCreateFromGap, onLoadMore }) {
   const [activeTab, setActiveTab] = useState('list');
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [hoveredRow, setHoveredRow] = useState(null);
@@ -85,6 +85,16 @@ export default function HistoryList({ entries, allTags, onEdit, onDelete, onCrea
                   </div>
                 </div>
               ))}
+              {entries.length > 0 && entries.length % 50 === 0 && onLoadMore && (
+                <button
+                  onClick={onLoadMore}
+                  style={{ width: '100%', padding: '10px', margin: '8px 0', background: 'none', border: '1px solid var(--border)', borderRadius: 5, color: 'var(--text-dim)', fontSize: 12, fontWeight: 600, fontFamily: "'JetBrains Mono',monospace", cursor: 'pointer', transition: 'all .15s' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--accent)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-dim)'; }}
+                >
+                  Load more entries…
+                </button>
+              )}
             </div>
           )}
         </div>

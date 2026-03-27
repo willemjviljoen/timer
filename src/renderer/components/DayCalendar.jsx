@@ -25,17 +25,24 @@ function formatDateFull(d) {
   return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 function fmtDur(ms) {
-  const t = Math.floor(ms / 1000), d = Math.floor(t / 86400), h = Math.floor((t % 86400) / 3600), s = t % 3600;
-  return d > 0 ? `${pad(d)}d ${pad(h)}h ${pad(s)}s` : `${pad(h)}h ${pad(s)}s`;
+  const t = Math.floor(ms / 1000), d = Math.floor(t / 86400), h = Math.floor((t % 86400) / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  return d > 0 ? `${pad(d)}d ${pad(h)}h ${pad(m)}m` : `${pad(h)}h ${pad(m)}m ${pad(s)}s`;
 }
 function fmtTimeShort(iso) {
   try { return new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
-function computeOverlapLayout(dayEntries) {
+function entryMinutes(e, calendarDate) {
+  const s = new Date(e.start_time), en = new Date(e.end_time);
+  const startMin = isSameDay(s, calendarDate) ? s.getHours() * 60 + s.getMinutes() : 0;
+  const endMin = isSameDay(en, calendarDate) ? en.getHours() * 60 + en.getMinutes() : 24 * 60;
+  return { startMin, endMin: Math.max(endMin, startMin + 1) };
+}
+
+function computeOverlapLayout(dayEntries, calendarDate) {
   const items = dayEntries.map(e => {
-    const s = new Date(e.start_time), en = new Date(e.end_time);
-    return { id: e.id, startMin: s.getHours() * 60 + s.getMinutes(), endMin: en.getHours() * 60 + en.getMinutes() };
+    const { startMin, endMin } = entryMinutes(e, calendarDate);
+    return { id: e.id, startMin, endMin };
   }).sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin);
 
   const clusters = [];
@@ -84,7 +91,7 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
   }, [calendarDate]);
 
   const allDayEntries = entries
-    .filter(e => isSameDay(new Date(e.start_time), calendarDate))
+    .filter(e => isSameDay(new Date(e.start_time), calendarDate) || isSameDay(new Date(e.end_time), calendarDate))
     .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
 
   const dayTagIds = [...new Set(allDayEntries.flatMap(e => e.tags || []))];
@@ -113,12 +120,9 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
     return V.accent;
   };
 
-  const layout = computeOverlapLayout(dayEntries);
+  const layout = computeOverlapLayout(dayEntries, calendarDate);
 
-  const entryIntervals = dayEntries.map(e => ({
-    startMin: new Date(e.start_time).getHours() * 60 + new Date(e.start_time).getMinutes(),
-    endMin: new Date(e.end_time).getHours() * 60 + new Date(e.end_time).getMinutes(),
-  }));
+  const entryIntervals = dayEntries.map(e => entryMinutes(e, calendarDate));
   const merged = [];
   for (const iv of [...entryIntervals].sort((a, b) => a.startMin - b.startMin)) {
     if (merged.length && iv.startMin < merged[merged.length - 1].endMin) {
@@ -262,8 +266,7 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
 
             {/* Entry blocks */}
             {dayEntries.map(entry => {
-              const s = new Date(entry.start_time), e = new Date(entry.end_time);
-              const startMin = s.getHours() * 60 + s.getMinutes(), endMin = e.getHours() * 60 + e.getMinutes();
+              const { startMin, endMin } = entryMinutes(entry, calendarDate);
               const top = (startMin / 30) * ROW_H;
               const height = Math.max(((endMin - startMin) / 30) * ROW_H, 24);
               const color = entryColor(entry);

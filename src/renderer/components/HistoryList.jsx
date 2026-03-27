@@ -19,7 +19,7 @@ function formatTimeShort(isoString) {
   try { return new Date(isoString).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
 }
 
-export default function HistoryList({ entries, allTags, onEdit, onDelete, onCreateFromGap, onLoadMore }) {
+export default function HistoryList({ entries, allTags, timerState, onEdit, onDelete, onCreateFromGap, onLoadMore }) {
   const [activeTab, setActiveTab] = useState('list');
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [hoveredRow, setHoveredRow] = useState(null);
@@ -102,6 +102,7 @@ export default function HistoryList({ entries, allTags, onEdit, onDelete, onCrea
         <DayCalendar
           entries={entries}
           allTags={allTags || []}
+          timerState={timerState}
           calendarDate={calendarDate}
           setCalendarDate={setCalendarDate}
           onEdit={onEdit}

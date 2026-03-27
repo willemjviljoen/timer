@@ -80,7 +80,9 @@ function computeOverlapLayout(dayEntries, calendarDate) {
   return layout;
 }
 
-export default function DayCalendar({ entries, allTags, calendarDate, setCalendarDate, onEdit, onCreateFromGap }) {
+const ACTIVE_TIMER_ID = '__active_timer__';
+
+export default function DayCalendar({ entries, allTags, timerState, calendarDate, setCalendarDate, onEdit, onCreateFromGap }) {
   const scrollRef = useRef(null);
   const today = new Date();
   const [hoveredGap, setHoveredGap] = useState(null);
@@ -101,6 +103,23 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
     ? allDayEntries
     : allDayEntries.filter(e => e.tags?.some(t => filterTags.includes(t)));
 
+  // Build active timer phantom entry
+  const activeEntry = (() => {
+    if (!timerState?.isRunning || !timerState?.startTime) return null;
+    const startDate = new Date(timerState.startTime);
+    const now = new Date();
+    if (!isSameDay(startDate, calendarDate) && !isSameDay(now, calendarDate)) return null;
+    return {
+      id: ACTIVE_TIMER_ID,
+      description: timerState.description || 'Running…',
+      start_time: timerState.startTime,
+      end_time: now.toISOString(),
+      duration_ms: timerState.elapsed || 0,
+      tags: [],
+      _isActive: true,
+    };
+  })();
+
   const toggleFilter = tagId => setFilterTags(prev => prev.includes(tagId) ? prev.filter(t => t !== tagId) : [...prev, tagId]);
 
   const prevDay = () => setCalendarDate(new Date(calendarDate.getTime() - 86400000));
@@ -109,8 +128,10 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
   const isToday = isSameDay(calendarDate, today);
   const nowMinutes = today.getHours() * 60 + today.getMinutes();
   const nowTop = (nowMinutes / 30) * ROW_H;
-  const totalMs = dayEntries.reduce((sum, e) => sum + e.duration_ms, 0);
-  const totalAllMs = allDayEntries.reduce((sum, e) => sum + e.duration_ms, 0);
+
+  const calendarEntries = activeEntry ? [...dayEntries, activeEntry] : dayEntries;
+  const totalMs = calendarEntries.reduce((sum, e) => sum + e.duration_ms, 0);
+  const totalAllMs = (activeEntry ? [...allDayEntries, activeEntry] : allDayEntries).reduce((sum, e) => sum + e.duration_ms, 0);
 
   const entryColor = entry => {
     if (entry.tags?.length > 0) {
@@ -120,9 +141,9 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
     return V.accent;
   };
 
-  const layout = computeOverlapLayout(dayEntries, calendarDate);
+  const layout = computeOverlapLayout(calendarEntries, calendarDate);
 
-  const entryIntervals = dayEntries.map(e => entryMinutes(e, calendarDate));
+  const entryIntervals = calendarEntries.map(e => entryMinutes(e, calendarDate));
   const merged = [];
   for (const iv of [...entryIntervals].sort((a, b) => a.startMin - b.startMin)) {
     if (merged.length && iv.startMin < merged[merged.length - 1].endMin) {
@@ -265,11 +286,11 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
             })}
 
             {/* Entry blocks */}
-            {dayEntries.map(entry => {
+            {calendarEntries.map(entry => {
               const { startMin, endMin } = entryMinutes(entry, calendarDate);
               const top = (startMin / 30) * ROW_H;
               const height = Math.max(((endMin - startMin) / 30) * ROW_H, 24);
-              const color = entryColor(entry);
+              const color = entry._isActive ? '#22c55e' : entryColor(entry);
               const isShort = height < 48;
               const l = layout[entry.id] || { col: 0, totalCols: 1 };
               const colWidthPct = 100 / l.totalCols;
@@ -277,12 +298,15 @@ export default function DayCalendar({ entries, allTags, calendarDate, setCalenda
               const gapPx = l.totalCols > 1 ? 2 : 0;
               return (
                 <div key={entry.id} onClick={() => onEdit(entry)}
-                  style={{ position: 'absolute', top, height, left: `${colLeftPct}%`, width: `calc(${colWidthPct}% - ${gapPx}px)`, background: color + '14', border: `1px solid ${color}35`, borderLeft: `3px solid ${color}`, borderRadius: '0 5px 5px 0', cursor: 'pointer', padding: isShort ? '2px 8px' : '6px 8px', display: 'flex', flexDirection: 'column', gap: 1, overflow: 'hidden', transition: 'background .15s, border-color .15s', zIndex: 5 }}
+                  style={{ position: 'absolute', top, height, left: `${colLeftPct}%`, width: `calc(${colWidthPct}% - ${gapPx}px)`, background: color + '14', border: `1px solid ${color}35`, borderLeft: `3px solid ${color}`, borderRadius: '0 5px 5px 0', cursor: 'pointer', padding: isShort ? '2px 8px' : '6px 8px', display: 'flex', flexDirection: 'column', gap: 1, overflow: 'hidden', transition: 'background .15s, border-color .15s', zIndex: entry._isActive ? 6 : 5, animation: entry._isActive ? 'active-entry-pulse 2s ease-in-out infinite' : 'none' }}
                   onMouseEnter={ev => { ev.currentTarget.style.background = color + '24'; ev.currentTarget.style.borderColor = color + '60'; }}
                   onMouseLeave={ev => { ev.currentTarget.style.background = color + '14'; ev.currentTarget.style.borderColor = color + '35'; }}>
-                  <span style={{ fontSize: l.totalCols > 2 ? 10 : 12, fontWeight: 600, color: V.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{entry.description}</span>
-                  {!isShort && <span style={{ fontSize: l.totalCols > 2 ? 9 : 10, color: V.textDim, fontFamily: V.mono, whiteSpace: 'nowrap' }}>{fmtTimeShort(entry.start_time)} – {fmtTimeShort(entry.end_time)}</span>}
-                  {!isShort && height > 72 && entry.tags?.length > 0 && l.totalCols <= 2 && (
+                  <span style={{ fontSize: l.totalCols > 2 ? 10 : 12, fontWeight: 600, color: V.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
+                    {entry._isActive && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: color, marginRight: 5, verticalAlign: 'middle' }} />}
+                    {entry.description}
+                  </span>
+                  {!isShort && <span style={{ fontSize: l.totalCols > 2 ? 9 : 10, color: entry._isActive ? '#22c55e90' : V.textDim, fontFamily: V.mono, whiteSpace: 'nowrap' }}>{fmtTimeShort(entry.start_time)} – {entry._isActive ? 'now' : fmtTimeShort(entry.end_time)}</span>}
+                  {!isShort && !entry._isActive && height > 72 && entry.tags?.length > 0 && l.totalCols <= 2 && (
                     <div style={{ display: 'flex', gap: 3, marginTop: 1, flexWrap: 'wrap' }}>
                       {entry.tags.map(tid => { const tag = allTags.find(t => t.id === tid); return tag ? <TagPill key={tid} tag={tag} size="sm" /> : null; })}
                     </div>

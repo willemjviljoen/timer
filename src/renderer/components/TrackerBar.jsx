@@ -125,12 +125,26 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
     const handlePlay = () => { if (!isRunning) startTimer(); };
     const handlePause = () => { if (isRunning) stopTimer(); };
     const handleSetTaskDescription = (e) => { setDescription(e.detail); };
+    const handleUpdateActiveTimer = (e) => {
+      const { description: desc, startTime } = e.detail;
+      if (desc != null) setDescription(desc);
+      if (startTime) {
+        startTimeRef.current = startTime;
+        const offset = Date.now() - new Date(startTime).getTime();
+        setElapsed(offset);
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        const startDate = new Date(startTime);
+        intervalRef.current = setInterval(() => { setElapsed(Date.now() - startDate.getTime()); }, 1000);
+        api?.saveActiveTimer?.({ description: desc ?? description, startTime });
+      }
+    };
 
     window.addEventListener('tracker-play-pause', handlePlayPause);
     window.addEventListener('tracker-stop', handleStop);
     window.addEventListener('tracker-play', handlePlay);
     window.addEventListener('tracker-pause', handlePause);
     window.addEventListener('set-task-description', handleSetTaskDescription);
+    window.addEventListener('update-active-timer', handleUpdateActiveTimer);
 
     return () => {
       window.removeEventListener('tracker-play-pause', handlePlayPause);
@@ -138,8 +152,9 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, onCreateTa
       window.removeEventListener('tracker-play', handlePlay);
       window.removeEventListener('tracker-pause', handlePause);
       window.removeEventListener('set-task-description', handleSetTaskDescription);
+      window.removeEventListener('update-active-timer', handleUpdateActiveTimer);
     };
-  }, [toggleTimer, stopTimer, startTimer, isRunning]);
+  }, [toggleTimer, stopTimer, startTimer, isRunning, description, api]);
 
   // Report elapsed time changes to parent
   useEffect(() => {

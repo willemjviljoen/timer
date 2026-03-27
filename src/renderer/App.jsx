@@ -89,6 +89,13 @@ export default function App() {
   }, [api]);
 
   const handleEditSave = useCallback(async (updated) => {
+    if (updated.id === '__active_timer__') {
+      window.dispatchEvent(new CustomEvent('update-active-timer', {
+        detail: { description: updated.description, startTime: updated.startTime },
+      }));
+      setEditingEntry(null);
+      return;
+    }
     if (api?.updateEntry) {
       try {
         await api.updateEntry(updated);
@@ -209,6 +216,7 @@ export default function App() {
           <HistoryList
             entries={entries}
             allTags={allTags}
+            timerState={timerState}
             onEdit={entry => { setEditingEntry(entry); setIsNewEntry(false); }}
             onDelete={entry => setDeletingEntry(entry)}
             onCreateFromGap={handleCreateFromGap}

@@ -1,15 +1,16 @@
 const { shell, safeStorage } = require('electron');
 const http = require('http');
 const https = require('https');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const { initFirebase, getFirebaseAuth } = require('./firebase');
 const { GoogleAuthProvider, signInWithCredential } = require('firebase/auth');
 
-// Google OAuth client credentials — loaded from .env (see .env.example).
-const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
-const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
+// Google OAuth client ID — loaded from .env (see .env.example).
+// No client secret needed: Desktop OAuth clients use PKCE instead.
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 
 let currentUser = null;
 let authStateListeners = [];
@@ -18,17 +19,35 @@ function getTokenPath() {
   return path.join(app.getPath('userData'), 'auth-token.enc');
 }
 
+// ─── PKCE helpers ────────────────────────────────────────────────
+
 /**
- * Exchange an authorization code for tokens using Google's token endpoint.
+ * Generate a cryptographically random code verifier (43–128 chars, URL-safe).
  */
-function exchangeCodeForTokens(code, redirectUri) {
+function generateCodeVerifier() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+/**
+ * Derive the S256 code challenge from a verifier.
+ */
+function generateCodeChallenge(verifier) {
+  return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
+
+// ─── Token exchange ──────────────────────────────────────────────
+
+/**
+ * Exchange an authorization code for tokens using PKCE (no client secret).
+ */
+function exchangeCodeForTokens(code, redirectUri, codeVerifier) {
   return new Promise((resolve, reject) => {
     const postData = new URLSearchParams({
       code,
       client_id:     GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
       redirect_uri:  redirectUri,
       grant_type:    'authorization_code',
+      code_verifier: codeVerifier,
     }).toString();
 
     const req = https.request({
@@ -57,14 +76,14 @@ function exchangeCodeForTokens(code, redirectUri) {
 }
 
 /**
- * Refresh an access token using a stored refresh token.
+ * Refresh an access token using a stored refresh token (no client secret
+ * required for Desktop OAuth clients).
  */
 function refreshAccessToken(refreshToken) {
   return new Promise((resolve, reject) => {
     const postData = new URLSearchParams({
       refresh_token: refreshToken,
       client_id:     GOOGLE_CLIENT_ID,
-      client_secret: GOOGLE_CLIENT_SECRET,
       grant_type:    'refresh_token',
     }).toString();
 
@@ -92,6 +111,8 @@ function refreshAccessToken(refreshToken) {
     req.end();
   });
 }
+
+// ─── Token storage ───────────────────────────────────────────────
 
 /**
  * Store the refresh token securely using Electron's safeStorage.
@@ -133,6 +154,8 @@ function clearStoredTokens() {
   }
 }
 
+// ─── Firebase sign-in ────────────────────────────────────────────
+
 /**
  * Sign in to Firebase using a Google ID token.
  */
@@ -145,25 +168,33 @@ async function signInToFirebase(idToken) {
   return currentUser;
 }
 
+// ─── Sign-in flow (PKCE) ────────────────────────────────────────
+
 /**
- * Full sign-in flow: loopback OAuth → exchange code → Firebase sign-in.
+ * Full sign-in flow: loopback OAuth with PKCE → exchange code → Firebase sign-in.
  */
 function signIn() {
   return new Promise((resolve, reject) => {
+    // Generate PKCE pair
+    const codeVerifier  = generateCodeVerifier();
+    const codeChallenge = generateCodeChallenge(codeVerifier);
+
     // Create a temporary HTTP server on a random port
     const server = http.createServer();
     server.listen(0, '127.0.0.1', () => {
       const port = server.address().port;
       const redirectUri = `http://127.0.0.1:${port}/callback`;
 
-      // Build the Google OAuth URL
+      // Build the Google OAuth URL with PKCE
       const params = new URLSearchParams({
-        client_id:     GOOGLE_CLIENT_ID,
-        redirect_uri:  redirectUri,
-        response_type: 'code',
-        scope:         'openid email profile',
-        access_type:   'offline',
-        prompt:        'consent',
+        client_id:             GOOGLE_CLIENT_ID,
+        redirect_uri:          redirectUri,
+        response_type:         'code',
+        scope:                 'openid email profile',
+        access_type:           'offline',
+        prompt:                'consent',
+        code_challenge:        codeChallenge,
+        code_challenge_method: 'S256',
       });
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 
@@ -191,7 +222,7 @@ function signIn() {
         server.close();
 
         try {
-          const tokens = await exchangeCodeForTokens(code, redirectUri);
+          const tokens = await exchangeCodeForTokens(code, redirectUri, codeVerifier);
 
           // Store the refresh token for silent re-auth on future launches
           if (tokens.refresh_token) {

@@ -196,7 +196,7 @@ export default function App() {
     // Notify main process to resize window FIRST
     if (!miniMode) {
       // Switching TO mini mode - resize first (compact!)
-      await api?.resizeWindow?.({ width: 300, height: 110 });
+      await api?.resizeWindow?.({ width: 300, height: 122 });
     } else {
       // Switching FROM mini mode - resize first
       await api?.resizeWindow?.({ width: 720, height: 680 });
@@ -210,7 +210,7 @@ export default function App() {
       {miniMode ? (
         // Mini mode - only show the widget, but keep TrackerBar hidden for event handling
         <>
-          <MiniWidget timerState={timerState} onToggleMode={handleToggleMiniMode} />
+          <MiniWidget timerState={timerState} allProjects={allProjects} onToggleMode={handleToggleMiniMode} />
           <div style={{ display: 'none' }}>
             <TrackerBar
               onEntrySaved={handleEntrySaved}

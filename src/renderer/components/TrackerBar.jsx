@@ -57,7 +57,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
     api?.saveActiveTimer?.({ description: description.trim(), startTime, projectId: activeProjectId });
     const started = Date.now();
     intervalRef.current = setInterval(() => { setElapsed(Date.now() - started); }, 1000);
-    onTimerStateChange?.({ isRunning: true, description: description.trim(), elapsed: 0, startTime });
+    onTimerStateChange?.({ isRunning: true, description: description.trim(), elapsed: 0, startTime, projectId: activeProjectId });
   }, [description, activeProjectId, api, onTimerStateChange]);
 
   const stopTimer = useCallback(async () => {
@@ -87,7 +87,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
     startTimeRef.current = null;
     inputRef.current?.focus();
     api?.clearActiveTimer?.();
-    onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0 });
+    onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0, projectId: null });
   }, [description, elapsed, activeTags, activeProjectId, api, onEntrySaved, onTimerStateChange]);
 
   const toggleTimer = useCallback(() => {
@@ -179,9 +179,9 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
   // Report elapsed time changes to parent
   useEffect(() => {
     if (isRunning) {
-      onTimerStateChange?.({ isRunning, description, elapsed, startTime: startTimeRef.current });
+      onTimerStateChange?.({ isRunning, description, elapsed, startTime: startTimeRef.current, projectId: activeProjectId });
     }
-  }, [elapsed, isRunning, description, onTimerStateChange]);
+  }, [elapsed, isRunning, description, activeProjectId, onTimerStateChange]);
 
   // ── Remote sync: active timer changes from another device ───────
   useEffect(() => {
@@ -200,7 +200,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
         setElapsed(offset);
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = setInterval(() => { setElapsed(Date.now() - startDate.getTime()); }, 1000);
-        onTimerStateChange?.({ isRunning: true, description: data.description, elapsed: offset, startTime: data.startTime });
+        onTimerStateChange?.({ isRunning: true, description: data.description, elapsed: offset, startTime: data.startTime, projectId: activeProjectId });
       } else {
         // Remote device stopped the timer
         if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -210,7 +210,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
         setActiveTags([]);
         setActiveProjectId(null);
         startTimeRef.current = null;
-        onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0 });
+        onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0, projectId: null });
       }
     });
   }, [api, onTimerStateChange]);

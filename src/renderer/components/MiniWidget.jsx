@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-export default function MiniWidget({ timerState, onToggleMode }) {
+export default function MiniWidget({ timerState, allProjects, onToggleMode }) {
   const [displayTime, setDisplayTime] = useState('00:00:00');
   const [showTaskInput, setShowTaskInput] = useState(false);
   const [taskInput, setTaskInput] = useState('');
@@ -205,6 +205,25 @@ export default function MiniWidget({ timerState, onToggleMode }) {
         >
           {timerState?.description || 'Click to enter task'}
         </div>
+        {(() => {
+          const proj = timerState?.projectId && allProjects
+            ? allProjects.find(p => p.id === timerState.projectId)
+            : null;
+          return proj ? (
+            <div style={{
+              fontSize: '9px',
+              color: proj.color || '#6366f1',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              maxWidth: '100%',
+              lineHeight: '1.2',
+              fontFamily: 'monospace',
+            }}>
+              {proj.client_name ? `${proj.client_name} / ` : ''}{proj.name}
+            </div>
+          ) : null;
+        })()}
       </div>
 
       {/* Control Button - Single context-aware button */}

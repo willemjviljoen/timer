@@ -1,5 +1,28 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// ─── Subscriber registry ────────────────────────────────────────
+// Allows multiple components to listen to the same IPC channel.
+// Each channel gets one ipcRenderer listener that fans out to all
+// registered callbacks.  The on* helpers return an unsubscribe
+// function so components can clean up in useEffect teardown.
+const _subs = {};          // channel → Set<callback>
+const _bound = new Set();  // channels that already have an ipcRenderer.on
+
+function _subscribe(channel, cb, extract) {
+  if (!_subs[channel]) _subs[channel] = new Set();
+  _subs[channel].add(cb);
+
+  if (!_bound.has(channel)) {
+    _bound.add(channel);
+    ipcRenderer.on(channel, (_event, ...args) => {
+      for (const fn of _subs[channel]) fn(...(extract ? extract(args) : args));
+    });
+  }
+
+  // Return unsubscribe function
+  return () => { _subs[channel]?.delete(cb); };
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
   // Time entries
   saveEntry: (entry) => ipcRenderer.invoke('save-entry', entry),
@@ -19,10 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   toggleAlwaysOnTop: () => ipcRenderer.send('window-toggle-always-on-top'),
 
   // Listen for events from main
-  onAlwaysOnTopChanged: (callback) => {
-    ipcRenderer.removeAllListeners('always-on-top-changed');
-    ipcRenderer.on('always-on-top-changed', (_event, value) => callback(value));
-  },
+  onAlwaysOnTopChanged: (callback) => _subscribe('always-on-top-changed', callback),
 
   // App info
   getVersion: () => ipcRenderer.invoke('get-version'),
@@ -59,49 +79,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Timer state and controls
   updateTimerState: (state) => ipcRenderer.invoke('update-timer-state', state),
-  onThumbbarPlayPause: (callback) => {
-    ipcRenderer.removeAllListeners('thumbbar-play-pause');
-    ipcRenderer.on('thumbbar-play-pause', () => callback());
-  },
-  onThumbbarStop: (callback) => {
-    ipcRenderer.removeAllListeners('thumbbar-stop');
-    ipcRenderer.on('thumbbar-stop', () => callback());
-  },
-  onThumbbarSettings: (callback) => {
-    ipcRenderer.removeAllListeners('thumbbar-settings');
-    ipcRenderer.on('thumbbar-settings', () => callback());
-  },
+  onThumbbarPlayPause: (callback) => _subscribe('thumbbar-play-pause', callback),
+  onThumbbarStop: (callback) => _subscribe('thumbbar-stop', callback),
+  onThumbbarSettings: (callback) => _subscribe('thumbbar-settings', callback),
 
   // ─── Auth ───────────────────────────────────────────────────────
   signIn:       () => ipcRenderer.invoke('auth:sign-in'),
   signOut:      () => ipcRenderer.invoke('auth:sign-out'),
   getAuthState: () => ipcRenderer.invoke('auth:get-state'),
-  onAuthStateChanged: (callback) => {
-    ipcRenderer.removeAllListeners('auth:state-changed');
-    ipcRenderer.on('auth:state-changed', (_event, user) => callback(user));
-  },
+  onAuthStateChanged: (callback) => _subscribe('auth:state-changed', callback),
 
   // ─── Sync ───────────────────────────────────────────────────────
   getSyncStatus: () => ipcRenderer.invoke('sync:get-status'),
   fetchDateRange: (startDate, endDate) => ipcRenderer.invoke('sync:fetch-date-range', startDate, endDate),
-  onActiveTimerSync: (callback) => {
-    ipcRenderer.removeAllListeners('sync:active-timer-changed');
-    ipcRenderer.on('sync:active-timer-changed', (_event, data) => callback(data));
-  },
-  onEntriesSync: (callback) => {
-    ipcRenderer.removeAllListeners('sync:entries-updated');
-    ipcRenderer.on('sync:entries-updated', () => callback());
-  },
-  onTagsSync: (callback) => {
-    ipcRenderer.removeAllListeners('sync:tags-updated');
-    ipcRenderer.on('sync:tags-updated', () => callback());
-  },
-  onSyncConflict: (callback) => {
-    ipcRenderer.removeAllListeners('sync:conflict-resolved');
-    ipcRenderer.on('sync:conflict-resolved', (_event, message) => callback(message));
-  },
-  onSyncStatusChanged: (callback) => {
-    ipcRenderer.removeAllListeners('sync:status-changed');
-    ipcRenderer.on('sync:status-changed', (_event, status) => callback(status));
-  },
+  onActiveTimerSync: (callback) => _subscribe('sync:active-timer-changed', callback),
+  onEntriesSync: (callback) => _subscribe('sync:entries-updated', callback),
+  onTagsSync: (callback) => _subscribe('sync:tags-updated', callback),
+  onSyncConflict: (callback) => _subscribe('sync:conflict-resolved', callback),
+  onSyncStatusChanged: (callback) => _subscribe('sync:status-changed', callback),
 });

@@ -15,9 +15,10 @@ export default function SyncStatus() {
 
   useEffect(() => {
     api?.getAuthState?.().then(u => setUser(u)).catch(() => {});
-    api?.onAuthStateChanged?.(u => setUser(u));
-    api?.onSyncStatusChanged?.(s => setStatus(s?.state || 'disconnected'));
     api?.getSyncStatus?.().then(s => setStatus(s?.state || 'disconnected')).catch(() => {});
+    const unsubAuth = api?.onAuthStateChanged?.(u => setUser(u));
+    const unsubSync = api?.onSyncStatusChanged?.(s => setStatus(s?.state || 'disconnected'));
+    return () => { unsubAuth?.(); unsubSync?.(); };
   }, []);
 
   // Don't show anything if not signed in

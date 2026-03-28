@@ -10,19 +10,28 @@ const { compareSemver, esc, pad } = require('./utils');
 
 // ─── Load .env ──────────────────────────────────────────────────
 (function loadEnv() {
-  const envPath = path.join(__dirname, '..', '..', '.env');
-  try {
-    const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith('#')) continue;
-      const eqIndex = trimmed.indexOf('=');
-      if (eqIndex === -1) continue;
-      const key = trimmed.slice(0, eqIndex).trim();
-      const val = trimmed.slice(eqIndex + 1).trim();
-      if (key && !(key in process.env)) process.env[key] = val;
-    }
-  } catch {}
+  // In dev, .env lives at the project root (two levels up from src/main/).
+  // In packaged builds, __dirname is inside app.asar so fall back to the
+  // directory next to the executable (process.resourcesPath's parent).
+  const candidates = [
+    path.join(__dirname, '..', '..', '.env'),
+    path.join(process.resourcesPath || '', '.env'),
+  ];
+  for (const envPath of candidates) {
+    try {
+      const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eqIndex = trimmed.indexOf('=');
+        if (eqIndex === -1) continue;
+        const key = trimmed.slice(0, eqIndex).trim();
+        const val = trimmed.slice(eqIndex + 1).trim();
+        if (key && !(key in process.env)) process.env[key] = val;
+      }
+      break; // loaded successfully, stop trying candidates
+    } catch {}
+  }
 })();
 
 // Resolve assets folder whether running in dev or packaged
@@ -115,26 +124,7 @@ function initDatabase() {
     );
   `);
 
-  // ─── Projects (additive — never drops existing data) ───────────
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS projects (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      name        TEXT    NOT NULL,
-      client_name TEXT    NOT NULL DEFAULT '',
-      color       TEXT    NOT NULL DEFAULT '#6366f1',
-      uuid        TEXT    UNIQUE,
-      updated_at  TEXT,
-      synced_at   TEXT,
-      deleted     INTEGER DEFAULT 0
-    );
-    CREATE INDEX IF NOT EXISTS idx_projects_deleted ON projects(deleted);
-  `);
-
-  // Add project_id to time_entries and active_timer if missing
-  try { db.exec('ALTER TABLE time_entries ADD COLUMN project_id INTEGER REFERENCES projects(id)'); } catch {}
-  try { db.exec('ALTER TABLE active_timer ADD COLUMN project_id INTEGER'); } catch {}
-
-  // Run sync-related schema migrations
+  // Run all schema migrations (sync columns, projects, etc.)
   runMigrations(db);
 
   console.log(`Database opened at: ${dbPath}`);

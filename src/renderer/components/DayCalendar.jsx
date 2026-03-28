@@ -20,7 +20,7 @@ const MIN_GAP = 15;
 
 const ACTIVE_TIMER_ID = '__active_timer__';
 
-export default function DayCalendar({ entries, allTags, timerState, calendarDate, setCalendarDate, onEdit, onCreateFromGap }) {
+export default function DayCalendar({ entries, allTags, allProjects, timerState, calendarDate, setCalendarDate, onEdit, onCreateFromGap }) {
   const scrollRef = useRef(null);
   const today = new Date();
   const [hoveredGap, setHoveredGap] = useState(null);
@@ -96,6 +96,10 @@ export default function DayCalendar({ entries, allTags, timerState, calendarDate
     if (entry.tags?.length > 0) {
       const tag = allTags.find(t => t.id === entry.tags[0]);
       if (tag) return tag.color;
+    }
+    if (entry.project_id && allProjects) {
+      const proj = allProjects.find(p => p.id === entry.project_id);
+      if (proj) return proj.color;
     }
     return V.accent;
   };
@@ -264,6 +268,7 @@ export default function DayCalendar({ entries, allTags, timerState, calendarDate
                     {entry._isActive && <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: color, marginRight: 5, verticalAlign: 'middle' }} />}
                     {entry.description}
                   </span>
+                  {!isShort && (() => { const proj = entry.project_id && allProjects ? allProjects.find(p => p.id === entry.project_id) : null; return proj ? <span style={{ fontSize: l.totalCols > 2 ? 8 : 9, color: proj.color || '#6366f1', fontFamily: V.mono, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', opacity: 0.8 }}>{proj.client_name ? `${proj.client_name} / ` : ''}{proj.name}</span> : null; })()}
                   {!isShort && <span style={{ fontSize: l.totalCols > 2 ? 9 : 10, color: entry._isActive ? '#22c55e90' : V.textDim, fontFamily: V.mono, whiteSpace: 'nowrap' }}>{fmtTimeShort(entry.start_time)} – {entry._isActive ? 'now' : fmtTimeShort(entry.end_time)}</span>}
                   {!isShort && !entry._isActive && height > 72 && entry.tags?.length > 0 && l.totalCols <= 2 && (
                     <div style={{ display: 'flex', gap: 3, marginTop: 1, flexWrap: 'wrap' }}>

@@ -9,11 +9,10 @@ export default function TitleBar({ onOpenSettings, hasUpdate, onToggleMiniMode }
   const api = window.electronAPI;
 
   useEffect(() => {
-    if (api?.onAlwaysOnTopChanged) {
-      api.onAlwaysOnTopChanged((value) => setPinned(value));
-    }
+    const unsub = api?.onAlwaysOnTopChanged?.((value) => setPinned(value));
     api?.getVersion?.().then(v => setVersion(v)).catch(() => {});
     api?.getSettings?.().then(s => setSyncEnabled(s?.syncEnabled ?? false)).catch(() => {});
+    return () => { unsub?.(); };
   }, []);
 
   return (

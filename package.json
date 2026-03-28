@@ -25,6 +25,13 @@
       "dist/**/*",
       "assets/**/*"
     ],
+    "extraResources": [
+      {
+        "from": ".env",
+        "to": ".env",
+        "filter": [".env"]
+      }
+    ],
     "win": {
       "target": [
         {

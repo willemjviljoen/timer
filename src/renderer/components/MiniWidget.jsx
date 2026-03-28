@@ -84,9 +84,10 @@ export default function MiniWidget({ timerState, allProjects, onToggleMode }) {
 
   // Listen for always-on-top state changes
   useEffect(() => {
-    api?.onAlwaysOnTopChanged?.((value) => {
+    const unsub = api?.onAlwaysOnTopChanged?.((value) => {
       setIsPinned(value);
     });
+    return () => { unsub?.(); };
   }, [api]);
 
   const handleTogglePin = () => {

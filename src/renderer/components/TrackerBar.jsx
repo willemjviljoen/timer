@@ -64,6 +64,10 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     const endTime = new Date().toISOString();
     const durationMs = startTimeRef.current ? Date.now() - new Date(startTimeRef.current).getTime() : elapsed;
+    // Clear active timer BEFORE saving the entry to prevent duplicates on crash.
+    // If a crash occurs between clear and save, the entry is lost (small window)
+    // rather than silently duplicated on next launch (much worse).
+    await api?.clearActiveTimer?.();
     if (api?.saveEntry) {
       try {
         await api.saveEntry({
@@ -86,7 +90,6 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
     setActiveProjectId(null);
     startTimeRef.current = null;
     inputRef.current?.focus();
-    api?.clearActiveTimer?.();
     onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0, projectId: null });
   }, [description, elapsed, activeTags, activeProjectId, api, onEntrySaved, onTimerStateChange]);
 
@@ -186,7 +189,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
   // ── Remote sync: active timer changes from another device ───────
   useEffect(() => {
     if (!api?.onActiveTimerSync) return;
-    api.onActiveTimerSync((data) => {
+    const unsub = api.onActiveTimerSync((data) => {
       if (data) {
         // Remote device started or updated a timer — apply it locally
         const startDate = new Date(data.startTime);
@@ -196,11 +199,13 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
         setShowSuggestions(false);
         setShowTagPicker(false);
         notificationFiredRef.current = false;
+        const remoteProjectId = data.projectId || null;
+        setActiveProjectId(remoteProjectId);
         const offset = Date.now() - startDate.getTime();
         setElapsed(offset);
         if (intervalRef.current) clearInterval(intervalRef.current);
         intervalRef.current = setInterval(() => { setElapsed(Date.now() - startDate.getTime()); }, 1000);
-        onTimerStateChange?.({ isRunning: true, description: data.description, elapsed: offset, startTime: data.startTime, projectId: activeProjectId });
+        onTimerStateChange?.({ isRunning: true, description: data.description, elapsed: offset, startTime: data.startTime, projectId: remoteProjectId });
       } else {
         // Remote device stopped the timer
         if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -213,6 +218,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
         onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0, projectId: null });
       }
     });
+    return () => { unsub?.(); };
   }, [api, onTimerStateChange]);
 
   const time = formatTime(elapsed);

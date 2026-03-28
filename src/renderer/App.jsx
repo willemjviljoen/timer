@@ -165,31 +165,31 @@ export default function App() {
 
   // Listen for thumbbar control events
   useEffect(() => {
-    api?.onThumbbarPlayPause?.(() => {
+    const unsub1 = api?.onThumbbarPlayPause?.(() => {
       window.dispatchEvent(new CustomEvent('tracker-play-pause'));
     });
-
-    api?.onThumbbarStop?.(() => {
+    const unsub2 = api?.onThumbbarStop?.(() => {
       window.dispatchEvent(new CustomEvent('tracker-stop'));
     });
-
-    api?.onThumbbarSettings?.(() => {
+    const unsub3 = api?.onThumbbarSettings?.(() => {
       setShowSettings(true);
     });
+    return () => { unsub1?.(); unsub2?.(); unsub3?.(); };
   }, [api]);
 
   // ─── Sync event listeners ─────────────────────────────────────
   useEffect(() => {
     // Refresh entries when another device creates/updates/deletes entries
-    api?.onEntriesSync?.(() => loadEntries());
+    const unsub1 = api?.onEntriesSync?.(() => loadEntries());
     // Refresh tags when another device creates/deletes tags
-    api?.onTagsSync?.(() => loadTags());
+    const unsub2 = api?.onTagsSync?.(() => loadTags());
     // Show a brief notification when a timer conflict was resolved
-    api?.onSyncConflict?.((message) => {
+    const unsub3 = api?.onSyncConflict?.((message) => {
       console.log('Sync conflict resolved:', message);
       // Trigger a flash to indicate the auto-saved entry
       flash();
     });
+    return () => { unsub1?.(); unsub2?.(); unsub3?.(); };
   }, [api, loadEntries, loadTags, flash]);
 
   const handleToggleMiniMode = useCallback(async () => {

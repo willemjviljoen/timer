@@ -7,7 +7,8 @@ export default function AuthButton({ compact = false }) {
 
   useEffect(() => {
     api?.getAuthState?.().then(u => setUser(u)).catch(() => {});
-    api?.onAuthStateChanged?.(u => setUser(u));
+    const unsub = api?.onAuthStateChanged?.(u => setUser(u));
+    return () => { unsub?.(); };
   }, []);
 
   const handleSignIn = async () => {

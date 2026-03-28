@@ -96,15 +96,10 @@ function runMigrations(db) {
           CREATE INDEX IF NOT EXISTS idx_projects_deleted ON projects(deleted);
         `);
 
-        // Add project_id to time_entries
-        db.exec(`
-          ALTER TABLE time_entries ADD COLUMN project_id INTEGER REFERENCES projects(id);
-        `);
-
-        // Add project_id to active_timer
-        db.exec(`
-          ALTER TABLE active_timer ADD COLUMN project_id INTEGER;
-        `);
+        // Add project_id columns (try/catch for existing DBs that may
+        // already have these columns from a prior initDatabase() bug)
+        try { db.exec('ALTER TABLE time_entries ADD COLUMN project_id INTEGER REFERENCES projects(id)'); } catch {}
+        try { db.exec('ALTER TABLE active_timer ADD COLUMN project_id INTEGER'); } catch {}
       },
     },
   ];

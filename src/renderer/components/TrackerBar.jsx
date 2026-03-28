@@ -54,11 +54,11 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
     setShowSuggestions(false);
     setShowTagPicker(false);
     notificationFiredRef.current = false;
-    api?.saveActiveTimer?.({ description: description.trim(), startTime, projectId: activeProjectId });
+    api?.saveActiveTimer?.({ description: description.trim(), startTime, projectId: activeProjectId, tagIds: activeTags });
     const started = Date.now();
     intervalRef.current = setInterval(() => { setElapsed(Date.now() - started); }, 1000);
     onTimerStateChange?.({ isRunning: true, description: description.trim(), elapsed: 0, startTime, projectId: activeProjectId });
-  }, [description, activeProjectId, api, onTimerStateChange]);
+  }, [description, activeProjectId, activeTags, api, onTimerStateChange]);
 
   const stopTimer = useCallback(async () => {
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
@@ -130,6 +130,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
         setDescription(active.description);
         setIsRunning(true);
         if (active.project_id) setActiveProjectId(active.project_id);
+        if (Array.isArray(active.tag_ids) && active.tag_ids.length > 0) setActiveTags(active.tag_ids);
         const offset = Date.now() - startDate.getTime();
         setElapsed(offset);
         intervalRef.current = setInterval(() => { setElapsed(Date.now() - startDate.getTime()); }, 1000);
@@ -158,7 +159,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
         if (intervalRef.current) clearInterval(intervalRef.current);
         const startDate = new Date(startTime);
         intervalRef.current = setInterval(() => { setElapsed(Date.now() - startDate.getTime()); }, 1000);
-        api?.saveActiveTimer?.({ description: desc ?? description, startTime, projectId: activeProjectId });
+        api?.saveActiveTimer?.({ description: desc ?? description, startTime, projectId: activeProjectId, tagIds: activeTags });
       }
     };
 
@@ -250,7 +251,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
     const val = e.target.value;
     setDescription(val);
     if (isRunning) {
-      api?.saveActiveTimer?.({ description: val.trim(), startTime: startTimeRef.current, projectId: activeProjectId });
+      api?.saveActiveTimer?.({ description: val.trim(), startTime: startTimeRef.current, projectId: activeProjectId, tagIds: activeTags });
     } else {
       fetchSuggestions(val);
     }

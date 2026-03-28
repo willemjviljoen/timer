@@ -221,11 +221,12 @@ function registerIPC() {
 
   // Save active timer state (for crash recovery)
   ipcMain.handle('save-active-timer', (_event, timer) => {
+    const tagIds = JSON.stringify(timer.tagIds || []);
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO active_timer (id, description, start_time, project_id)
-      VALUES (1, @description, @startTime, @projectId)
+      INSERT OR REPLACE INTO active_timer (id, description, start_time, project_id, tag_ids)
+      VALUES (1, @description, @startTime, @projectId, @tagIds)
     `);
-    stmt.run({ description: timer.description, startTime: timer.startTime, projectId: timer.projectId || null });
+    stmt.run({ description: timer.description, startTime: timer.startTime, projectId: timer.projectId || null, tagIds });
     syncEngine?.pushActiveTimer({
       description: timer.description,
       startTime:   timer.startTime,
@@ -236,8 +237,10 @@ function registerIPC() {
 
   // Get active timer state
   ipcMain.handle('get-active-timer', () => {
-    const stmt = db.prepare('SELECT description, start_time, project_id FROM active_timer WHERE id = 1');
-    return stmt.get() || null;
+    const row = db.prepare('SELECT description, start_time, project_id, tag_ids FROM active_timer WHERE id = 1').get();
+    if (!row) return null;
+    try { row.tag_ids = JSON.parse(row.tag_ids || '[]'); } catch { row.tag_ids = []; }
+    return row;
   });
 
   // Clear active timer state (when stopped normally)

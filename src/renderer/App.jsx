@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import TitleBar from './components/TitleBar';
 import TrackerBar from './components/TrackerBar';
 import HistoryList from './components/HistoryList';
@@ -11,6 +11,7 @@ import MiniWidget from './components/MiniWidget';
 export default function App() {
   const [showFlash, setShowFlash] = useState(false);
   const [entries, setEntries] = useState([]);
+  const entriesLenRef = useRef(0);
   const [allTags, setAllTags] = useState([]);
   const [allProjects, setAllProjects] = useState([]);
   const [editingEntry, setEditingEntry] = useState(null);
@@ -42,11 +43,11 @@ export default function App() {
   const loadMoreEntries = useCallback(async () => {
     if (api?.getRecentEntries) {
       try {
-        const data = await api.getRecentEntries(entries.length + 50);
+        const data = await api.getRecentEntries(entriesLenRef.current + 50);
         setEntries(data);
       } catch (err) { console.error('Failed to load more entries:', err); }
     }
-  }, [api, entries.length]);
+  }, [api]);
 
   const loadTags = useCallback(async () => {
     if (api?.getTags) {
@@ -59,6 +60,9 @@ export default function App() {
       try { const projects = await api.getProjects(); setAllProjects(projects); } catch {}
     }
   }, [api]);
+
+  // Keep ref in sync for loadMoreEntries
+  useEffect(() => { entriesLenRef.current = entries.length; }, [entries.length]);
 
   useEffect(() => {
     loadEntries();

@@ -81,6 +81,7 @@ function runMigrations(db) {
     {
       version: 2,
       up(db) {
+
         // Create projects table
         db.exec(`
           CREATE TABLE IF NOT EXISTS projects (
@@ -100,6 +101,13 @@ function runMigrations(db) {
         // already have these columns from a prior initDatabase() bug)
         try { db.exec('ALTER TABLE time_entries ADD COLUMN project_id INTEGER REFERENCES projects(id)'); } catch {}
         try { db.exec('ALTER TABLE active_timer ADD COLUMN project_id INTEGER'); } catch {}
+      },
+    },
+    // v3: Add tag_ids column to active_timer for crash recovery
+    {
+      version: 3,
+      up(db) {
+        try { db.exec('ALTER TABLE active_timer ADD COLUMN tag_ids TEXT DEFAULT \'[]\''); } catch {}
       },
     },
   ];

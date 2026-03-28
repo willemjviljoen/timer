@@ -101,8 +101,7 @@ function storeRefreshToken(refreshToken) {
     const encrypted = safeStorage.encryptString(refreshToken);
     fs.writeFileSync(getTokenPath(), encrypted);
   } else {
-    // Fallback: store as plain text (still in user's app data directory)
-    fs.writeFileSync(getTokenPath(), refreshToken, 'utf-8');
+    console.warn('safeStorage encryption unavailable — refresh token will not be persisted. Sign-in will be required on next launch.');
   }
 }
 

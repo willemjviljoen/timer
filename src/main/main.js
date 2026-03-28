@@ -115,6 +115,25 @@ function initDatabase() {
     );
   `);
 
+  // ─── Projects (additive — never drops existing data) ───────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT    NOT NULL,
+      client_name TEXT    NOT NULL DEFAULT '',
+      color       TEXT    NOT NULL DEFAULT '#6366f1',
+      uuid        TEXT    UNIQUE,
+      updated_at  TEXT,
+      synced_at   TEXT,
+      deleted     INTEGER DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_projects_deleted ON projects(deleted);
+  `);
+
+  // Add project_id to time_entries and active_timer if missing
+  try { db.exec('ALTER TABLE time_entries ADD COLUMN project_id INTEGER REFERENCES projects(id)'); } catch {}
+  try { db.exec('ALTER TABLE active_timer ADD COLUMN project_id INTEGER'); } catch {}
+
   // Run sync-related schema migrations
   runMigrations(db);
 
@@ -128,8 +147,8 @@ function registerIPC() {
     const uuid = entry.uuid || crypto.randomUUID();
     const now  = new Date().toISOString();
     const stmt = db.prepare(`
-      INSERT INTO time_entries (description, start_time, end_time, duration_ms, uuid, updated_at)
-      VALUES (@description, @startTime, @endTime, @durationMs, @uuid, @updatedAt)
+      INSERT INTO time_entries (description, start_time, end_time, duration_ms, uuid, updated_at, project_id)
+      VALUES (@description, @startTime, @endTime, @durationMs, @uuid, @updatedAt, @projectId)
     `);
     const result = stmt.run({
       description: entry.description,
@@ -138,6 +157,7 @@ function registerIPC() {
       durationMs:  entry.durationMs,
       uuid,
       updatedAt:   now,
+      projectId:   entry.projectId || null,
     });
     const entryId = result.lastInsertRowid;
 
@@ -154,22 +174,37 @@ function registerIPC() {
   // Update an existing time entry
   ipcMain.handle('update-entry', (_event, entry) => {
     const now = new Date().toISOString();
-    db.prepare(`
-      UPDATE time_entries
-      SET start_time  = @startTime,
-          end_time    = @endTime,
-          duration_ms = @durationMs,
-          description = @description,
-          updated_at  = @updatedAt
-      WHERE id = @id
-    `).run({
+    const updateFields = {
       id:          entry.id,
       startTime:   entry.startTime,
       endTime:     entry.endTime,
       durationMs:  entry.durationMs,
       description: entry.description,
       updatedAt:   now,
-    });
+    };
+    // Only update project_id if explicitly provided (allows clearing with null)
+    if ('projectId' in entry) {
+      db.prepare(`
+        UPDATE time_entries
+        SET start_time  = @startTime,
+            end_time    = @endTime,
+            duration_ms = @durationMs,
+            description = @description,
+            updated_at  = @updatedAt,
+            project_id  = @projectId
+        WHERE id = @id
+      `).run({ ...updateFields, projectId: entry.projectId || null });
+    } else {
+      db.prepare(`
+        UPDATE time_entries
+        SET start_time  = @startTime,
+            end_time    = @endTime,
+            duration_ms = @durationMs,
+            description = @description,
+            updated_at  = @updatedAt
+        WHERE id = @id
+      `).run(updateFields);
+    }
 
     if (Array.isArray(entry.tagIds)) {
       const del = db.prepare('DELETE FROM entry_tags WHERE entry_id = ?');
@@ -197,10 +232,10 @@ function registerIPC() {
   // Save active timer state (for crash recovery)
   ipcMain.handle('save-active-timer', (_event, timer) => {
     const stmt = db.prepare(`
-      INSERT OR REPLACE INTO active_timer (id, description, start_time)
-      VALUES (1, @description, @startTime)
+      INSERT OR REPLACE INTO active_timer (id, description, start_time, project_id)
+      VALUES (1, @description, @startTime, @projectId)
     `);
-    stmt.run({ description: timer.description, startTime: timer.startTime });
+    stmt.run({ description: timer.description, startTime: timer.startTime, projectId: timer.projectId || null });
     syncEngine?.pushActiveTimer({
       description: timer.description,
       startTime:   timer.startTime,
@@ -211,7 +246,7 @@ function registerIPC() {
 
   // Get active timer state
   ipcMain.handle('get-active-timer', () => {
-    const stmt = db.prepare('SELECT description, start_time FROM active_timer WHERE id = 1');
+    const stmt = db.prepare('SELECT description, start_time, project_id FROM active_timer WHERE id = 1');
     return stmt.get() || null;
   });
 
@@ -222,24 +257,41 @@ function registerIPC() {
     return { success: true };
   });
 
-  // Autocomplete: return distinct descriptions matching a prefix
+  // Autocomplete: return distinct descriptions matching a prefix (with most-recent project)
   ipcMain.handle('search-descriptions', (_event, query) => {
+    const escaped = query.replace(/[%_\\]/g, '\\$&');
+
+    // Get descriptions with their most-recent project_id
     const stmt = db.prepare(`
-      SELECT description, MAX(created_at) as last_used, COUNT(*) as use_count
-      FROM time_entries
-      WHERE description LIKE @query ESCAPE '\\' AND deleted = 0
-      GROUP BY description
+      SELECT t.description, MAX(t.created_at) as last_used, COUNT(*) as use_count,
+             (SELECT t2.project_id FROM time_entries t2
+              WHERE t2.description = t.description AND t2.deleted = 0
+              ORDER BY t2.created_at DESC LIMIT 1) as project_id
+      FROM time_entries t
+      WHERE t.description LIKE @query ESCAPE '\\' AND t.deleted = 0
+      GROUP BY t.description
       ORDER BY last_used DESC
       LIMIT 10
     `);
-    const escaped = query.replace(/[%_\\]/g, '\\$&');
-    return stmt.all({ query: `%${escaped}%` });
+    const descriptions = stmt.all({ query: `%${escaped}%` });
+
+    // Also search projects matching the query
+    const projStmt = db.prepare(`
+      SELECT id, name, client_name, color
+      FROM projects
+      WHERE deleted = 0 AND (name LIKE @query ESCAPE '\\' OR client_name LIKE @query ESCAPE '\\')
+      ORDER BY name
+      LIMIT 5
+    `);
+    const projects = projStmt.all({ query: `%${escaped}%` });
+
+    return { descriptions, projects };
   });
 
   // Get recent entries for history view (with tag IDs)
   ipcMain.handle('get-recent-entries', (_event, limit = 50) => {
     const entries = db.prepare(`
-      SELECT id, description, start_time, end_time, duration_ms, created_at, uuid
+      SELECT id, description, start_time, end_time, duration_ms, created_at, uuid, project_id
       FROM time_entries
       WHERE deleted = 0
       ORDER BY created_at DESC
@@ -284,7 +336,7 @@ function registerIPC() {
     }
 
     const entries = db.prepare(`
-      SELECT id, description, start_time, end_time, duration_ms, created_at
+      SELECT id, description, start_time, end_time, duration_ms, created_at, project_id
       FROM time_entries
       WHERE deleted = 0
       ORDER BY created_at DESC
@@ -294,16 +346,21 @@ function registerIPC() {
     for (const tag of db.prepare('SELECT id, name FROM tags').all()) {
       tagMap[tag.id] = tag.name;
     }
+    const projMap = {};
+    for (const p of db.prepare('SELECT id, name, client_name FROM projects WHERE deleted = 0').all()) {
+      projMap[p.id] = p.client_name ? `${p.client_name} / ${p.name}` : p.name;
+    }
     const entryTagStmt = db.prepare('SELECT tag_id FROM entry_tags WHERE entry_id = ?');
 
-    const lines = ['Description,Tags,Start Time,End Time,Duration (ms),Duration (hh:mm:ss),Created At'];
+    const lines = ['Description,Project,Tags,Start Time,End Time,Duration (ms),Duration (hh:mm:ss),Created At'];
     for (const e of entries) {
       const tagNames = entryTagStmt.all(e.id).map(r => tagMap[r.tag_id] || '').filter(Boolean).join('; ');
+      const projectName = e.project_id ? (projMap[e.project_id] || '') : '';
       const h = Math.floor(e.duration_ms / 3600000);
       const m = Math.floor((e.duration_ms % 3600000) / 60000);
       const s = Math.floor((e.duration_ms % 60000) / 1000);
       const dur = `${pad(h)}:${pad(m)}:${pad(s)}`;
-      lines.push([esc(e.description), esc(tagNames), esc(e.start_time), esc(e.end_time), e.duration_ms, esc(dur), esc(e.created_at)].join(','));
+      lines.push([esc(e.description), esc(projectName), esc(tagNames), esc(e.start_time), esc(e.end_time), e.duration_ms, esc(dur), esc(e.created_at)].join(','));
     }
 
     fs.writeFileSync(result.filePath, lines.join('\r\n'), 'utf-8');
@@ -352,6 +409,34 @@ function registerIPC() {
       return { ok: true };
     }
     return { ok: false, error: 'Only http/https URLs are allowed' };
+  });
+
+  // ─── Projects ──────────────────────────────────────────────────
+  ipcMain.handle('get-projects', () => {
+    return db.prepare('SELECT id, name, client_name, color, uuid FROM projects WHERE deleted = 0 OR deleted IS NULL ORDER BY name').all();
+  });
+
+  ipcMain.handle('create-project', (_event, { name, clientName, color }) => {
+    const uuid = crypto.randomUUID();
+    const now  = new Date().toISOString();
+    const stmt = db.prepare('INSERT INTO projects (name, client_name, color, uuid, updated_at) VALUES (@name, @clientName, @color, @uuid, @updatedAt)');
+    const result = stmt.run({ name, clientName: clientName || '', color: color || '#6366f1', uuid, updatedAt: now });
+    return { id: result.lastInsertRowid, name, client_name: clientName || '', color: color || '#6366f1', uuid };
+  });
+
+  ipcMain.handle('update-project', (_event, { id, name, clientName, color }) => {
+    const now = new Date().toISOString();
+    db.prepare('UPDATE projects SET name = @name, client_name = @clientName, color = @color, updated_at = @updatedAt WHERE id = @id')
+      .run({ id, name, clientName: clientName || '', color: color || '#6366f1', updatedAt: now });
+    return { success: true };
+  });
+
+  ipcMain.handle('delete-project', (_event, id) => {
+    const now = new Date().toISOString();
+    db.prepare('UPDATE projects SET deleted = 1, updated_at = ? WHERE id = ?').run(now, id);
+    // Clear project_id from entries that referenced this project
+    db.prepare('UPDATE time_entries SET project_id = NULL, updated_at = ? WHERE project_id = ?').run(now, id);
+    return { success: true };
   });
 
   // ─── Tags ─────────────────────────────────────────────────────

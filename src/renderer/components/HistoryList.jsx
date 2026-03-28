@@ -3,7 +3,7 @@ import TagPill from './TagPill';
 import DayCalendar from './DayCalendar';
 import { formatDuration, formatDate, formatTimeShort } from '../utils/formatting';
 
-export default function HistoryList({ entries, allTags, timerState, onEdit, onDelete, onCreateFromGap, onLoadMore }) {
+export default function HistoryList({ entries, allTags, allProjects, timerState, onEdit, onDelete, onCreateFromGap, onLoadMore }) {
   const [activeTab, setActiveTab] = useState('list');
   const [calendarDate, setCalendarDate] = useState(new Date());
   const [hoveredRow, setHoveredRow] = useState(null);
@@ -47,6 +47,14 @@ export default function HistoryList({ entries, allTags, timerState, onEdit, onDe
                       <span style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: "'JetBrains Mono',monospace" }}>
                         {formatDate(entry.start_time)} · {formatTimeShort(entry.start_time)} → {formatTimeShort(entry.end_time)}
                       </span>
+                      {(() => {
+                        const proj = entry.project_id && allProjects ? allProjects.find(p => p.id === entry.project_id) : null;
+                        return proj ? (
+                          <span className="autocomplete__project-badge" style={{ borderColor: proj.color || '#6366f1', color: proj.color || '#6366f1', fontSize: 10 }}>
+                            {proj.client_name ? `${proj.client_name} / ` : ''}{proj.name}
+                          </span>
+                        ) : null;
+                      })()}
                       {entry.tags?.length > 0 && allTags && (
                         <div style={{ display: 'flex', gap: 3 }}>
                           {entry.tags.map(tid => { const tag = allTags.find(t => t.id === tid); return tag ? <TagPill key={tid} tag={tag} size="sm" /> : null; })}
@@ -86,6 +94,7 @@ export default function HistoryList({ entries, allTags, timerState, onEdit, onDe
         <DayCalendar
           entries={entries}
           allTags={allTags || []}
+          allProjects={allProjects || []}
           timerState={timerState}
           calendarDate={calendarDate}
           setCalendarDate={setCalendarDate}

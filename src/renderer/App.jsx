@@ -12,6 +12,7 @@ export default function App() {
   const [showFlash, setShowFlash] = useState(false);
   const [entries, setEntries] = useState([]);
   const [allTags, setAllTags] = useState([]);
+  const [allProjects, setAllProjects] = useState([]);
   const [editingEntry, setEditingEntry] = useState(null);
   const [isNewEntry, setIsNewEntry] = useState(false);
   const [deletingEntry, setDeletingEntry] = useState(null);
@@ -53,16 +54,23 @@ export default function App() {
     }
   }, [api]);
 
+  const loadProjects = useCallback(async () => {
+    if (api?.getProjects) {
+      try { const projects = await api.getProjects(); setAllProjects(projects); } catch {}
+    }
+  }, [api]);
+
   useEffect(() => {
     loadEntries();
     loadTags();
+    loadProjects();
     refreshSettings();
     setTimeout(() => {
       api?.checkForUpdate?.().then(result => {
         if (result?.ok && result?.hasUpdate) setUpdateInfo(result);
       }).catch(() => {});
     }, 3000);
-  }, [loadEntries, loadTags, refreshSettings]);
+  }, [loadEntries, loadTags, loadProjects, refreshSettings]);
 
   const flash = useCallback(() => {
     setShowFlash(true);
@@ -115,6 +123,7 @@ export default function App() {
           endTime: newEntry.endTime || newEntry.end_time,
           durationMs: newEntry.durationMs || newEntry.duration_ms,
           tagIds: newEntry.tagIds || [],
+          projectId: newEntry.projectId || null,
         });
         setEditingEntry(null);
         setIsNewEntry(false);
@@ -207,6 +216,7 @@ export default function App() {
               onEntrySaved={handleEntrySaved}
               settings={settings}
               allTags={allTags}
+              allProjects={allProjects}
               onCreateTag={handleCreateTag}
               onTimerStateChange={setTimerState}
             />
@@ -224,12 +234,14 @@ export default function App() {
             onEntrySaved={handleEntrySaved}
             settings={settings}
             allTags={allTags}
+            allProjects={allProjects}
             onCreateTag={handleCreateTag}
             onTimerStateChange={setTimerState}
           />
           <HistoryList
             entries={entries}
             allTags={allTags}
+            allProjects={allProjects}
             timerState={timerState}
             onEdit={entry => { setEditingEntry(entry); setIsNewEntry(false); }}
             onDelete={entry => setDeletingEntry(entry)}
@@ -245,6 +257,7 @@ export default function App() {
             entry={editingEntry}
             isNew={true}
             allTags={allTags}
+            allProjects={allProjects}
             onCreateTag={handleCreateTag}
             onSave={handleNewEntrySave}
             onCancel={() => { setEditingEntry(null); setIsNewEntry(false); }}
@@ -254,6 +267,7 @@ export default function App() {
             entry={editingEntry}
             isNew={false}
             allTags={allTags}
+            allProjects={allProjects}
             onCreateTag={handleCreateTag}
             onSave={handleEditSave}
             onCancel={() => setEditingEntry(null)}
@@ -275,6 +289,8 @@ export default function App() {
           onClose={() => { setShowSettings(false); refreshSettings(); }}
           onSaved={refreshSettings}
           updateInfo={updateInfo}
+          allProjects={allProjects}
+          onProjectsChanged={loadProjects}
         />
       )}
       {showFlash && <SavedFlash />}

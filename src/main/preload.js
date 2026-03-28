@@ -41,6 +41,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
 
+  // Projects
+  getProjects: () => ipcRenderer.invoke('get-projects'),
+  createProject: (project) => ipcRenderer.invoke('create-project', project),
+  updateProject: (project) => ipcRenderer.invoke('update-project', project),
+  deleteProject: (id) => ipcRenderer.invoke('delete-project', id),
+
   // Tags
   getTags: () => ipcRenderer.invoke('get-tags'),
   createTag: (tag) => ipcRenderer.invoke('create-tag', tag),

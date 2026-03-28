@@ -77,6 +77,36 @@ function runMigrations(db) {
         `);
       },
     },
+    // v2: Add projects table and link entries to projects
+    {
+      version: 2,
+      up(db) {
+        // Create projects table
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS projects (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT    NOT NULL,
+            client_name TEXT    NOT NULL DEFAULT '',
+            color       TEXT    NOT NULL DEFAULT '#6366f1',
+            uuid        TEXT    UNIQUE,
+            updated_at  TEXT,
+            synced_at   TEXT,
+            deleted     INTEGER DEFAULT 0
+          );
+          CREATE INDEX IF NOT EXISTS idx_projects_deleted ON projects(deleted);
+        `);
+
+        // Add project_id to time_entries
+        db.exec(`
+          ALTER TABLE time_entries ADD COLUMN project_id INTEGER REFERENCES projects(id);
+        `);
+
+        // Add project_id to active_timer
+        db.exec(`
+          ALTER TABLE active_timer ADD COLUMN project_id INTEGER;
+        `);
+      },
+    },
   ];
 
   const pending = migrations.filter(m => m.version > currentVersion);

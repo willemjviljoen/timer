@@ -77,6 +77,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ─── Sync ───────────────────────────────────────────────────────
   getSyncStatus: () => ipcRenderer.invoke('sync:get-status'),
+  fetchDateRange: (startDate, endDate) => ipcRenderer.invoke('sync:fetch-date-range', startDate, endDate),
   onActiveTimerSync: (callback) => {
     ipcRenderer.removeAllListeners('sync:active-timer-changed');
     ipcRenderer.on('sync:active-timer-changed', (_event, data) => callback(data));

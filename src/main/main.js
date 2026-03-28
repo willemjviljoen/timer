@@ -440,6 +440,11 @@ function registerIPC() {
     if (!syncEngine) return { state: 'disconnected' };
     return syncEngine.getStatus();
   });
+
+  ipcMain.handle('sync:fetch-date-range', async (_event, startDate, endDate) => {
+    if (!syncEngine) return false;
+    return syncEngine.fetchEntriesForRange(startDate, endDate);
+  });
 }
 
 // ─── Tray ────────────────────────────────────────────────────────

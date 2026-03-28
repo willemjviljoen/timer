@@ -37,6 +37,20 @@ export default function DayCalendar({ entries, allTags, timerState, calendarDate
     }
   }, [calendarDate]);
 
+  // Fetch remote entries on-demand when navigating beyond the realtime sync window (1 year)
+  // Fetches the entire month at once to avoid repeated calls when navigating day-by-day
+  useEffect(() => {
+    const api = window.electronAPI;
+    if (!api?.fetchDateRange) return;
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    if (calendarDate < oneYearAgo) {
+      const monthStart = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1);
+      const monthEnd = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0, 23, 59, 59, 999);
+      api.fetchDateRange(monthStart.toISOString(), monthEnd.toISOString());
+    }
+  }, [calendarDate]);
+
   const allDayEntries = entries
     .filter(e => isSameDay(new Date(e.start_time), calendarDate) || isSameDay(new Date(e.end_time), calendarDate))
     .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));

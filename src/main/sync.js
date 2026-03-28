@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const {
-  collection, doc, setDoc, onSnapshot, query, where, Timestamp, writeBatch, getDoc,
+  collection, doc, setDoc, onSnapshot, query, where, orderBy, getDocs, Timestamp, writeBatch, getDoc,
 } = require('firebase/firestore');
 const {
   ref, set, remove, onValue, onDisconnect, serverTimestamp,
@@ -37,6 +37,7 @@ class SyncEngine {
     this._status = 'connecting';
     this._isStarted = false;
     this._processingRemoteTimer = false;
+    this._fetchedRanges = []; // track which date ranges have been fetched on-demand
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────
@@ -273,9 +274,17 @@ class SyncEngine {
       .run(new Date().toISOString(), uuid);
   }
 
+  _getSyncWindowStart() {
+    const d = new Date();
+    d.setFullYear(d.getFullYear() - 1);
+    return d.toISOString();
+  }
+
   _listenEntries() {
     const colRef = collection(this.firestore, `users/${this.uid}/timeEntries`);
-    const unsub = onSnapshot(colRef, (snapshot) => {
+    const windowStart = this._getSyncWindowStart();
+    const q = query(colRef, where('startTime', '>=', windowStart));
+    const unsub = onSnapshot(q, (snapshot) => {
       let changed = false;
       for (const change of snapshot.docChanges()) {
         const data = change.doc.data();
@@ -337,6 +346,63 @@ class SyncEngine {
       if (changed) this.onEntriesUpdated();
     });
     this._unsubscribers.push(unsub);
+  }
+
+  /**
+   * On-demand fetch for a date range outside the realtime sync window.
+   * Called when the user navigates to historical dates in the calendar.
+   * Returns true if new entries were pulled, false otherwise.
+   */
+  async fetchEntriesForRange(startDate, endDate) {
+    if (!this._isStarted) return false;
+
+    // Check if this range was already fetched this session
+    const rangeKey = `${startDate}_${endDate}`;
+    if (this._fetchedRanges.includes(rangeKey)) return false;
+
+    try {
+      const colRef = collection(this.firestore, `users/${this.uid}/timeEntries`);
+      const q = query(
+        colRef,
+        where('startTime', '>=', startDate),
+        where('startTime', '<=', endDate),
+      );
+      const snapshot = await getDocs(q);
+
+      let changed = false;
+      for (const docSnap of snapshot.docs) {
+        const data = docSnap.data();
+        const uuid = docSnap.id;
+        if (data.deleted) continue;
+
+        const local = this.db.prepare('SELECT uuid FROM time_entries WHERE uuid = ?').get(uuid);
+        if (local) continue; // already have it
+
+        const result = this.db.prepare(`
+          INSERT INTO time_entries (description, start_time, end_time, duration_ms, uuid, updated_at, synced_at, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          data.description, data.startTime, data.endTime, data.durationMs,
+          uuid, data.updatedAt, new Date().toISOString(), data.createdAt,
+        );
+
+        if (Array.isArray(data.tagIds) && data.tagIds.length > 0) {
+          const entryId = result.lastInsertRowid;
+          const ins = this.db.prepare('INSERT OR IGNORE INTO entry_tags (entry_id, tag_id) SELECT ?, id FROM tags WHERE uuid = ?');
+          for (const tagUuid of data.tagIds) {
+            ins.run(entryId, tagUuid);
+          }
+        }
+        changed = true;
+      }
+
+      this._fetchedRanges.push(rangeKey);
+      if (changed) this.onEntriesUpdated();
+      return changed;
+    } catch (err) {
+      console.warn('fetchEntriesForRange error:', err.message);
+      return false;
+    }
   }
 
   // ─── Tags (Firestore) ──────────────────────────────────────────

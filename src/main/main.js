@@ -8,6 +8,23 @@ const { runMigrations } = require('./db-migrations');
 const auth = require('./auth');
 const { compareSemver, esc, pad } = require('./utils');
 
+// ─── Load .env ──────────────────────────────────────────────────
+(function loadEnv() {
+  const envPath = path.join(__dirname, '..', '..', '.env');
+  try {
+    const lines = fs.readFileSync(envPath, 'utf-8').split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eqIndex = trimmed.indexOf('=');
+      if (eqIndex === -1) continue;
+      const key = trimmed.slice(0, eqIndex).trim();
+      const val = trimmed.slice(eqIndex + 1).trim();
+      if (key && !(key in process.env)) process.env[key] = val;
+    }
+  } catch {}
+})();
+
 // Resolve assets folder whether running in dev or packaged
 function assetsPath(...segments) {
   const base = app.isPackaged
@@ -505,19 +522,14 @@ function createWindow() {
     try {
       mainWindow.setThumbarButtons([
         {
-          tooltip: 'Play/Pause (Ctrl+Space)',
-          icon: nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 }),
+          tooltip: 'Start / Stop (Ctrl+Space)',
+          icon: nativeImage.createFromPath(assetsPath('thumb-play.png')),
           click: () => mainWindow.webContents.send('thumbbar-play-pause'),
         },
         {
           tooltip: 'Stop',
-          icon: nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 }),
+          icon: nativeImage.createFromPath(assetsPath('thumb-stop.png')),
           click: () => mainWindow.webContents.send('thumbbar-stop'),
-        },
-        {
-          tooltip: 'Settings',
-          icon: nativeImage.createFromPath(assetsPath('icon.png')).resize({ width: 16, height: 16 }),
-          click: () => mainWindow.webContents.send('thumbbar-settings'),
         },
       ]);
     } catch (e) {

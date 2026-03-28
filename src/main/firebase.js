@@ -3,18 +3,16 @@ const { getAuth } = require('firebase/auth');
 const { getFirestore } = require('firebase/firestore');
 const { getDatabase } = require('firebase/database');
 
-// Firebase client config — this is public by design.
+// Firebase client config — loaded from .env (see .env.example).
 // Security is enforced by Firestore/RTDB rules, not by hiding this config.
 const FIREBASE_CONFIG = {
-  // TODO: Replace with your Firebase project config from the Firebase Console
-  // Go to: Firebase Console → Project Settings → General → Your apps → Web app
-  apiKey:            'YOUR_API_KEY',
-  authDomain:        'YOUR_PROJECT.firebaseapp.com',
-  projectId:         'YOUR_PROJECT',
-  storageBucket:     'YOUR_PROJECT.appspot.com',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId:             'YOUR_APP_ID',
-  databaseURL:       'https://YOUR_PROJECT-default-rtdb.firebaseio.com',
+  apiKey:            process.env.FIREBASE_API_KEY,
+  authDomain:        process.env.FIREBASE_AUTH_DOMAIN,
+  projectId:         process.env.FIREBASE_PROJECT_ID,
+  storageBucket:     process.env.FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
+  appId:             process.env.FIREBASE_APP_ID,
+  databaseURL:       process.env.FIREBASE_DATABASE_URL,
 };
 
 let firebaseApp = null;

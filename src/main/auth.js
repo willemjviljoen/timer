@@ -5,13 +5,11 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const { initFirebase, getFirebaseAuth } = require('./firebase');
-const { GoogleAuthProvider, signInWithCredential, onAuthStateChanged: firebaseOnAuthStateChanged } = require('firebase/auth');
+const { GoogleAuthProvider, signInWithCredential } = require('firebase/auth');
 
-// Google OAuth client credentials (for desktop apps — these are NOT secret)
-// TODO: Replace with your Google Cloud Console OAuth 2.0 client ID/secret
-// Create at: Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client IDs → Desktop app
-const GOOGLE_CLIENT_ID     = 'YOUR_CLIENT_ID.apps.googleusercontent.com';
-const GOOGLE_CLIENT_SECRET = 'YOUR_CLIENT_SECRET';
+// Google OAuth client credentials — loaded from .env (see .env.example).
+const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 let currentUser = null;
 let authStateListeners = [];

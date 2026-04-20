@@ -211,6 +211,22 @@ export default function EditModal({ entry, onSave, onCancel, allTags, allProject
             </div>
           </div>
           <div className="modal__duration-preview">Duration: <strong>{durationPreview()}</strong></div>
+          {!isNew && entry.uuid && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              marginTop: 4, padding: '5px 0',
+              fontSize: 11, fontFamily: "'JetBrains Mono',monospace",
+              color: 'var(--text-dim)',
+            }}>
+              <span style={{
+                width: 7, height: 7, borderRadius: '50%', flexShrink: 0,
+                background: entry.synced_at ? '#22c55e' : '#f59e0b',
+              }} />
+              {entry.synced_at
+                ? `Synced ${new Date(entry.synced_at).toLocaleString()}`
+                : 'Not yet synced'}
+            </div>
+          )}
           {error && <div className="modal__error">{error}</div>}
         </div>
         <div className="modal__footer">

@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Settings
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  onSettingsChanged: (callback) => _subscribe('settings-changed', callback),
 
   // Notifications
   showNotification: (title, body) => ipcRenderer.invoke('show-notification', title, body),

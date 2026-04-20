@@ -8,9 +8,11 @@ const { app } = require('electron');
 const { initFirebase, getFirebaseAuth } = require('./firebase');
 const { GoogleAuthProvider, signInWithCredential } = require('firebase/auth');
 
-// Google OAuth client ID — loaded from .env (see .env.example).
-// No client secret needed: Desktop OAuth clients use PKCE instead.
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+// Google OAuth credentials — loaded from .env (see .env.example).
+// Desktop OAuth clients require both client_id and client_secret,
+// even when using PKCE.
+const GOOGLE_CLIENT_ID     = process.env.GOOGLE_CLIENT_ID;
+const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
 
 let currentUser = null;
 let authStateListeners = [];
@@ -38,13 +40,14 @@ function generateCodeChallenge(verifier) {
 // ─── Token exchange ──────────────────────────────────────────────
 
 /**
- * Exchange an authorization code for tokens using PKCE (no client secret).
+ * Exchange an authorization code for tokens using PKCE + client secret.
  */
 function exchangeCodeForTokens(code, redirectUri, codeVerifier) {
   return new Promise((resolve, reject) => {
     const postData = new URLSearchParams({
       code,
       client_id:     GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
       redirect_uri:  redirectUri,
       grant_type:    'authorization_code',
       code_verifier: codeVerifier,
@@ -76,14 +79,14 @@ function exchangeCodeForTokens(code, redirectUri, codeVerifier) {
 }
 
 /**
- * Refresh an access token using a stored refresh token (no client secret
- * required for Desktop OAuth clients).
+ * Refresh an access token using a stored refresh token.
  */
 function refreshAccessToken(refreshToken) {
   return new Promise((resolve, reject) => {
     const postData = new URLSearchParams({
       refresh_token: refreshToken,
       client_id:     GOOGLE_CLIENT_ID,
+      client_secret: GOOGLE_CLIENT_SECRET,
       grant_type:    'refresh_token',
     }).toString();
 
@@ -121,8 +124,9 @@ function storeRefreshToken(refreshToken) {
   if (safeStorage.isEncryptionAvailable()) {
     const encrypted = safeStorage.encryptString(refreshToken);
     fs.writeFileSync(getTokenPath(), encrypted);
+    console.log('[auth] Refresh token stored at:', getTokenPath());
   } else {
-    console.warn('safeStorage encryption unavailable — refresh token will not be persisted. Sign-in will be required on next launch.');
+    console.warn('[auth] safeStorage encryption unavailable — refresh token will not be persisted.');
   }
 }
 
@@ -131,7 +135,10 @@ function storeRefreshToken(refreshToken) {
  */
 function loadRefreshToken() {
   const tokenPath = getTokenPath();
-  if (!fs.existsSync(tokenPath)) return null;
+  if (!fs.existsSync(tokenPath)) {
+    console.log('[auth] No stored refresh token at:', tokenPath);
+    return null;
+  }
 
   try {
     const raw = fs.readFileSync(tokenPath);
@@ -223,10 +230,17 @@ function signIn() {
 
         try {
           const tokens = await exchangeCodeForTokens(code, redirectUri, codeVerifier);
+          console.log('[auth] Token exchange result:', {
+            hasIdToken: !!tokens.id_token,
+            hasRefreshToken: !!tokens.refresh_token,
+            hasAccessToken: !!tokens.access_token,
+          });
 
           // Store the refresh token for silent re-auth on future launches
           if (tokens.refresh_token) {
             storeRefreshToken(tokens.refresh_token);
+          } else {
+            console.warn('[auth] No refresh_token in token response — silent sign-in will not work on next launch');
           }
 
           const user = await signInToFirebase(tokens.id_token);

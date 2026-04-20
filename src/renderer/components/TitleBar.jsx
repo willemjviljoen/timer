@@ -10,9 +10,10 @@ export default function TitleBar({ onOpenSettings, hasUpdate, onToggleMiniMode }
 
   useEffect(() => {
     const unsub = api?.onAlwaysOnTopChanged?.((value) => setPinned(value));
+    const unsubSettings = api?.onSettingsChanged?.(s => setSyncEnabled(s?.syncEnabled ?? false));
     api?.getVersion?.().then(v => setVersion(v)).catch(() => {});
     api?.getSettings?.().then(s => setSyncEnabled(s?.syncEnabled ?? false)).catch(() => {});
-    return () => { unsub?.(); };
+    return () => { unsub?.(); unsubSettings?.(); };
   }, []);
 
   return (

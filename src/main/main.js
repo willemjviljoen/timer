@@ -3,12 +3,8 @@ const path = require('path');
 const fs   = require('fs');
 const https = require('https');
 const crypto = require('crypto');
-const Database = require('better-sqlite3');
-const { runMigrations } = require('./db-migrations');
-const auth = require('./auth');
-const { compareSemver, esc, pad } = require('./utils');
 
-// ─── Load .env ──────────────────────────────────────────────────
+// ─── Load .env (must run before any modules that read process.env) ──
 (function loadEnv() {
   // In dev, .env lives at the project root (two levels up from src/main/).
   // In packaged builds, __dirname is inside app.asar so fall back to the
@@ -33,6 +29,11 @@ const { compareSemver, esc, pad } = require('./utils');
     } catch {}
   }
 })();
+
+const Database = require('better-sqlite3');
+const { runMigrations } = require('./db-migrations');
+const auth = require('./auth');
+const { compareSemver, esc, pad } = require('./utils');
 
 // Resolve assets folder whether running in dev or packaged
 function assetsPath(...segments) {
@@ -78,6 +79,10 @@ function writeSettings(settings) {
     Number(merged.notificationThresholdMinutes) || 120));
   fs.writeFileSync(getSettingsPath(), JSON.stringify(merged, null, 2), 'utf-8');
   settingsCache = merged;
+  // Notify renderer so TitleBar can update sync UI
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('settings-changed', merged);
+  }
   return merged;
 }
 
@@ -284,7 +289,7 @@ function registerIPC() {
   // Get recent entries for history view (with tag IDs)
   ipcMain.handle('get-recent-entries', (_event, limit = 50) => {
     const entries = db.prepare(`
-      SELECT id, description, start_time, end_time, duration_ms, created_at, uuid, project_id
+      SELECT id, description, start_time, end_time, duration_ms, created_at, uuid, project_id, synced_at
       FROM time_entries
       WHERE deleted = 0
       ORDER BY created_at DESC
@@ -489,7 +494,9 @@ function registerIPC() {
   // ─── Auth ───────────────────────────────────────────────────────
   ipcMain.handle('auth:sign-in', async () => {
     try {
+      console.log('[auth:sign-in] Starting sign-in flow...');
       const user = await auth.signIn();
+      console.log('[auth:sign-in] Sign-in success:', user?.uid || user?.email);
       // Ensure syncEnabled is saved when user signs in
       const currentSettings = loadSettings();
       if (!currentSettings.syncEnabled) {
@@ -497,6 +504,7 @@ function registerIPC() {
       }
       return { ok: true, user };
     } catch (err) {
+      console.error('[auth:sign-in] Sign-in failed:', err.message);
       return { ok: false, error: err.message };
     }
   });
@@ -637,12 +645,18 @@ async function initSync() {
 
   // Listen for auth state changes to start/stop sync
   auth.onAuthStateChanged((user) => {
+    console.log('[initSync] Auth state changed:', user ? `uid=${user.uid}` : 'signed out');
     // Forward auth state to renderer
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('auth:state-changed', user);
     }
 
     if (user) {
+      // Stop any previous engine before creating a new one
+      if (syncEngine) {
+        syncEngine.stop();
+        syncEngine = null;
+      }
       // User signed in — start sync
       const { firestore, rtdb } = initFirebase();
       const settings = loadSettings();
@@ -690,8 +704,10 @@ async function initSync() {
 
   // Only attempt silent sign-in if sync is enabled in settings
   const settings = loadSettings();
+  console.log('[initSync] syncEnabled:', settings.syncEnabled);
   if (settings.syncEnabled) {
-    await auth.trySilentSignIn();
+    const user = await auth.trySilentSignIn();
+    console.log('[initSync] Silent sign-in result:', user ? 'success' : 'no session');
   }
 }
 

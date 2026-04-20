@@ -6,6 +6,8 @@ const {
   ref, set, remove, onValue, onDisconnect, serverTimestamp,
 } = require('firebase/database');
 
+const RETRY_INTERVALS = [5000, 15000, 30000, 60000]; // retry backoff: 5s, 15s, 30s, 60s
+
 class SyncEngine {
   /**
    * @param {object} opts
@@ -35,9 +37,12 @@ class SyncEngine {
 
     this._unsubscribers = [];
     this._status = 'connecting';
+    this._statusMessage = '';
     this._isStarted = false;
     this._processingRemoteTimer = false;
     this._fetchedRanges = []; // track which date ranges have been fetched on-demand
+    this._retryCount = 0;
+    this._retryTimer = null;
   }
 
   // ─── Lifecycle ───────────────────────────────────────────────────
@@ -45,29 +50,40 @@ class SyncEngine {
   async start() {
     if (this._isStarted) return;
     this._isStarted = true;
+    this._retryCount = 0;
     this._setStatus('syncing');
+    console.log(`[sync] Starting sync for uid=${this.uid}, device=${this.deviceId}`);
 
     try {
-      // Run initial sync
+      // Run initial sync — push all local unsynced data to Firebase
       await this._initialSync();
 
-      // Attach real-time listeners
+      // Monitor RTDB connection state
+      this._listenConnectionState();
+
+      // Attach real-time listeners (with error handlers)
       this._listenActiveTimer();
       this._listenEntries();
       this._listenTags();
 
       // Drain any offline queue
-      this._drainQueue();
+      await this._drainQueue();
 
+      console.log('[sync] Sync started successfully');
       this._setStatus('synced');
     } catch (err) {
       console.error('SyncEngine start error:', err);
-      this._setStatus('error');
+      this._setStatus('error', err.message);
+      this._scheduleRetry();
     }
   }
 
   stop() {
     this._isStarted = false;
+    if (this._retryTimer) {
+      clearTimeout(this._retryTimer);
+      this._retryTimer = null;
+    }
     for (const unsub of this._unsubscribers) {
       try { unsub(); } catch {}
     }
@@ -76,12 +92,31 @@ class SyncEngine {
   }
 
   getStatus() {
-    return { state: this._status };
+    return { state: this._status, message: this._statusMessage };
   }
 
-  _setStatus(status) {
+  _setStatus(status, message) {
     this._status = status;
-    this.onStatusChanged({ state: status });
+    this._statusMessage = message || '';
+    this.onStatusChanged({ state: status, message: this._statusMessage });
+  }
+
+  _scheduleRetry() {
+    if (!this._isStarted) return;
+    const delay = RETRY_INTERVALS[Math.min(this._retryCount, RETRY_INTERVALS.length - 1)];
+    this._retryCount++;
+    console.log(`[sync] Retry #${this._retryCount} in ${delay / 1000}s...`);
+    this._retryTimer = setTimeout(() => {
+      this._retryTimer = null;
+      if (!this._isStarted) return;
+      // Stop listeners and restart
+      for (const unsub of this._unsubscribers) {
+        try { unsub(); } catch {}
+      }
+      this._unsubscribers = [];
+      this._isStarted = false;
+      this.start();
+    }, delay);
   }
 
   // ─── Initial Sync ───────────────────────────────────────────────
@@ -98,14 +133,21 @@ class SyncEngine {
       `SELECT uuid FROM ${table} WHERE synced_at IS NULL AND uuid IS NOT NULL AND deleted = 0`
     ).all();
 
+    console.log(`[sync] Pushing ${rows.length} unsynced ${type}(s) to Firebase...`);
+    let successCount = 0;
+    let failCount = 0;
+
     for (const row of rows) {
       try {
         if (type === 'entry') await this._pushEntryToFirestore(row.uuid);
         else await this._pushTagToFirestore(row.uuid);
+        successCount++;
       } catch (err) {
+        failCount++;
         console.warn(`Failed to push ${type} ${row.uuid}:`, err.message);
       }
     }
+    console.log(`[sync] ${type} push complete: ${successCount} succeeded, ${failCount} failed`);
   }
 
   // ─── Active Timer (RTDB) ────────────────────────────────────────
@@ -145,11 +187,37 @@ class SyncEngine {
     }
   }
 
+  _listenConnectionState() {
+    const connRef = ref(this.rtdb, '.info/connected');
+    const unsub = onValue(connRef, (snapshot) => {
+      const connected = snapshot.val() === true;
+      if (connected) {
+        console.log('[sync] Firebase connection established');
+        if (this._status === 'disconnected' || this._status === 'error') {
+          this._setStatus('synced');
+          this._retryCount = 0;
+          // Re-drain queue when reconnecting
+          this._drainQueue().catch(() => {});
+        }
+      } else {
+        console.log('[sync] Firebase connection lost');
+        if (this._status === 'synced') {
+          this._setStatus('disconnected', 'Connection to server lost');
+        }
+      }
+    });
+    this._unsubscribers.push(unsub);
+  }
+
   _listenActiveTimer() {
     const timerRef = this._getTimerRef();
     const unsub = onValue(timerRef, (snapshot) => {
       const remote = snapshot.val();
       this._handleRemoteActiveTimer(remote);
+    }, (err) => {
+      console.error('[sync] Active timer listener error:', err.message);
+      this._setStatus('error', 'Lost connection to timer sync');
+      this._scheduleRetry();
     });
     this._unsubscribers.push(unsub);
   }
@@ -344,6 +412,10 @@ class SyncEngine {
         }
       }
       if (changed) this.onEntriesUpdated();
+    }, (err) => {
+      console.error('[sync] Entries listener error:', err.message);
+      this._setStatus('error', 'Lost connection to entries sync');
+      this._scheduleRetry();
     });
     this._unsubscribers.push(unsub);
   }
@@ -468,6 +540,10 @@ class SyncEngine {
         }
       }
       if (changed) this.onTagsUpdated();
+    }, (err) => {
+      console.error('[sync] Tags listener error:', err.message);
+      this._setStatus('error', 'Lost connection to tags sync');
+      this._scheduleRetry();
     });
     this._unsubscribers.push(unsub);
   }

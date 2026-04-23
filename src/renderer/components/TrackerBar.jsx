@@ -23,6 +23,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
   const notificationFiredRef = useRef(false);
   const tagPickerRef = useRef(null);
   const projectPickerRef = useRef(null);
+  const isStoppingRef = useRef(false);
 
   const api = window.electronAPI;
 
@@ -61,6 +62,8 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
   }, [description, activeProjectId, activeTags, api, onTimerStateChange]);
 
   const stopTimer = useCallback(async () => {
+    if (isStoppingRef.current) return;
+    isStoppingRef.current = true;
     if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
     const endTime = new Date().toISOString();
     const durationMs = startTimeRef.current ? Date.now() - new Date(startTimeRef.current).getTime() : elapsed;
@@ -89,6 +92,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
     setActiveTags([]);
     setActiveProjectId(null);
     startTimeRef.current = null;
+    isStoppingRef.current = false;
     inputRef.current?.focus();
     onTimerStateChange?.({ isRunning: false, description: '', elapsed: 0, projectId: null });
   }, [description, elapsed, activeTags, activeProjectId, api, onEntrySaved, onTimerStateChange]);
@@ -101,7 +105,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
 
   // Global Ctrl+Space shortcut
   useEffect(() => {
-    const handler = e => { if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); toggleTimer(); } };
+    const handler = e => { if (e.repeat) return; if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); toggleTimer(); } };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [toggleTimer]);
@@ -271,6 +275,7 @@ export default function TrackerBar({ onEntrySaved, settings, allTags, allProject
   };
 
   const handleKeyDown = e => {
+    if (e.repeat) return;
     if (showSuggestions && totalSuggestions > 0) {
       if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedIndex(p => (p + 1) % totalSuggestions); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); setSelectedIndex(p => (p <= 0 ? totalSuggestions - 1 : p - 1)); return; }

@@ -58,6 +58,10 @@ class SyncEngine {
       // Run initial sync — push all local unsynced data to Firebase
       await this._initialSync();
 
+      // Guard: stop() may have been called while _initialSync was awaiting
+      // (e.g. onAuthStateChanged fired twice and created a new engine)
+      if (!this._isStarted) return;
+
       // Monitor RTDB connection state
       this._listenConnectionState();
 
@@ -68,6 +72,8 @@ class SyncEngine {
 
       // Drain any offline queue
       await this._drainQueue();
+
+      if (!this._isStarted) return;
 
       console.log('[sync] Sync started successfully');
       this._setStatus('synced');
@@ -230,7 +236,11 @@ class SyncEngine {
     const local = this.db.prepare('SELECT description, start_time FROM active_timer WHERE id = 1').get();
 
     if (remote && local) {
-      // CONFLICT: both local and remote have running timers
+      // CONFLICT: both local and remote have running timers.
+      // Guard against a loop: if pushActiveTimer fails (RTDB write error), the remote
+      // timer stays in RTDB and the next onValue would re-trigger conflict indefinitely.
+      if (this._processingRemoteTimer) return;
+      this._processingRemoteTimer = true;
       this._resolveActiveTimerConflict(local, remote);
     } else if (remote && !local) {
       // No local timer — apply remote (the "continue on another PC" flow)
@@ -279,12 +289,12 @@ class SyncEngine {
       this._queueAction('entry', uuid, 'upsert', null);
     });
 
-    // Push local timer to RTDB (local wins)
+    // Push local timer to RTDB (local wins), then clear the conflict guard
     this.pushActiveTimer({
       description: local.description,
       startTime:   local.start_time,
       tagIds:      [],
-    });
+    }).finally(() => { this._processingRemoteTimer = false; });
 
     this.onConflictResolved(
       `A timer "${remote.description}" from another device was auto-saved as a completed entry.`

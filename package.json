@@ -29,7 +29,9 @@
       {
         "from": ".env",
         "to": ".env",
-        "filter": [".env"]
+        "filter": [
+          ".env"
+        ]
       }
     ],
     "win": {
@@ -48,6 +50,9 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }
+  },
+  "overrides": {
+    "uuid": "^14.0.0"
   },
   "dependencies": {
     "better-sqlite3": "^12.9.0",
@@ -70,7 +75,7 @@
     "vitest": "^4.1.4",
     "wait-on": "^9.0.5",
     "webpack": "^5.106.2",
-    "webpack-cli": "^7.0.2",
-    "webpack-dev-server": "^5.2.0"
+    "webpack-cli": "^6.0.1",
+    "webpack-dev-server": "^5.2.3"
   }
 }

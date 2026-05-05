@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // ─── Auth ───────────────────────────────────────────────────────
   signIn:       () => ipcRenderer.invoke('auth:sign-in'),
+  pbSignIn:     (email, password) => ipcRenderer.invoke('auth:pb-sign-in', { email, password }),
   signOut:      () => ipcRenderer.invoke('auth:sign-out'),
   getAuthState: () => ipcRenderer.invoke('auth:get-state'),
   onAuthStateChanged: (callback) => _subscribe('auth:state-changed', callback),

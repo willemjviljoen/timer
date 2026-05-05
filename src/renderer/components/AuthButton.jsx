@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 
-export default function AuthButton({ compact = false }) {
+export default function AuthButton({ compact = false, syncBackend = 'firebase', pocketbaseUrl = '' }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(false);
+  // PocketBase-specific form state
+  const [pbEmail, setPbEmail] = useState('');
+  const [pbPassword, setPbPassword] = useState('');
+  const [pbError, setPbError] = useState('');
   const api = window.electronAPI;
 
   useEffect(() => {
@@ -11,7 +15,8 @@ export default function AuthButton({ compact = false }) {
     return () => { unsub?.(); };
   }, []);
 
-  const handleSignIn = async () => {
+  // ─── Firebase sign-in ───────────────────────────────────────────
+  const handleFirebaseSignIn = async () => {
     setLoading(true);
     try {
       const result = await api.signIn();
@@ -23,11 +28,34 @@ export default function AuthButton({ compact = false }) {
     }
   };
 
+  // ─── PocketBase sign-in ─────────────────────────────────────────
+  const handlePbSignIn = async (e) => {
+    e?.preventDefault();
+    if (!pbEmail || !pbPassword) return;
+    setLoading(true);
+    setPbError('');
+    try {
+      const result = await api.pbSignIn(pbEmail, pbPassword);
+      if (result?.ok) {
+        setUser(result.user);
+        setPbEmail('');
+        setPbPassword('');
+      } else {
+        setPbError(result?.error || 'Sign-in failed.');
+      }
+    } catch (err) {
+      setPbError(err.message || 'Sign-in failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await api.signOut();
     setUser(null);
   };
 
+  // ─── Signed-in state ────────────────────────────────────────────
   if (user) {
     if (compact) {
       return (
@@ -81,11 +109,72 @@ export default function AuthButton({ compact = false }) {
     );
   }
 
-  // Not signed in
+  // ─── PocketBase login form ──────────────────────────────────────
+  if (syncBackend === 'pocketbase') {
+    if (compact) {
+      return (
+        <button
+          className="titlebar__btn"
+          title="Sign in to PocketBase"
+          style={{ fontSize: 11, opacity: 0.7 }}
+          disabled
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+            <polyline points="10 17 15 12 10 7" />
+            <line x1="15" y1="12" x2="3" y2="12" />
+          </svg>
+        </button>
+      );
+    }
+
+    return (
+      <form onSubmit={handlePbSignIn} style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <input
+          className="modal__input"
+          type="email"
+          placeholder="Email"
+          value={pbEmail}
+          autoComplete="username"
+          onChange={e => setPbEmail(e.target.value)}
+          disabled={loading}
+          required
+        />
+        <input
+          className="modal__input"
+          type="password"
+          placeholder="Password"
+          value={pbPassword}
+          autoComplete="current-password"
+          onChange={e => setPbPassword(e.target.value)}
+          disabled={loading}
+          required
+        />
+        {pbError && (
+          <p style={{ fontSize: 12, color: 'var(--danger, #ef4444)', margin: 0 }}>{pbError}</p>
+        )}
+        <button
+          className="settings__export-btn"
+          type="submit"
+          disabled={loading || !pbEmail || !pbPassword || !pocketbaseUrl}
+          style={{ alignSelf: 'flex-start' }}
+        >
+          {loading ? 'Signing in…' : 'Sign in to PocketBase'}
+        </button>
+        {!pocketbaseUrl && (
+          <p style={{ fontSize: 12, color: 'var(--text-dim)', margin: 0 }}>
+            Enter your PocketBase URL above first.
+          </p>
+        )}
+      </form>
+    );
+  }
+
+  // ─── Firebase / Google sign-in button ───────────────────────────
   return (
     <button
       className={compact ? 'titlebar__btn' : 'settings__export-btn'}
-      onClick={handleSignIn}
+      onClick={handleFirebaseSignIn}
       disabled={loading}
       title="Sign in with Google for cloud sync"
       style={compact ? { fontSize: 11, opacity: 0.7 } : {}}

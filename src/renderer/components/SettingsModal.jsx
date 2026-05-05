@@ -220,6 +220,8 @@ export default function SettingsModal({ onClose, onSaved, updateInfo, allProject
   const [activeTab, setActiveTab] = useState('general');
   const [threshold, setThreshold] = useState(120);
   const [syncEnabled, setSyncEnabled] = useState(false);
+  const [syncBackend, setSyncBackend] = useState('firebase');
+  const [pocketbaseUrl, setPocketbaseUrl] = useState('');
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState(null);
   const [saved, setSaved] = useState(false);
@@ -232,6 +234,8 @@ export default function SettingsModal({ onClose, onSaved, updateInfo, allProject
     api?.getSettings?.().then(s => {
       setThreshold(s.notificationThresholdMinutes ?? 120);
       setSyncEnabled(s.syncEnabled ?? false);
+      setSyncBackend(s.syncBackend || 'firebase');
+      setPocketbaseUrl(s.pocketbaseUrl || '');
     }).catch(() => {});
   }, []);
 
@@ -244,7 +248,12 @@ export default function SettingsModal({ onClose, onSaved, updateInfo, allProject
 
   const handleSave = async () => {
     const validated = Math.max(1, Math.min(999, Number(threshold) || 120));
-    await api?.saveSettings?.({ notificationThresholdMinutes: validated, syncEnabled });
+    await api?.saveSettings?.({
+      notificationThresholdMinutes: validated,
+      syncEnabled,
+      syncBackend,
+      pocketbaseUrl: pocketbaseUrl.trim(),
+    });
     setSaved(true);
     onSaved?.();
     setTimeout(() => { setSaved(false); onClose(); }, 700);
@@ -327,7 +336,50 @@ export default function SettingsModal({ onClose, onSaved, updateInfo, allProject
                     Enable cloud sync
                   </label>
                 </div>
-                {syncEnabled && <AuthButton />}
+
+                {syncEnabled && (
+                  <>
+                    {/* Backend selector */}
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                      {['firebase', 'pocketbase'].map(b => (
+                        <label key={b} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', color: 'var(--text)' }}>
+                          <input
+                            type="radio"
+                            name="syncBackend"
+                            value={b}
+                            checked={syncBackend === b}
+                            onChange={() => setSyncBackend(b)}
+                            style={{ accentColor: 'var(--accent)' }}
+                          />
+                          {b === 'firebase' ? 'Firebase (Google)' : 'PocketBase (self-hosted)'}
+                        </label>
+                      ))}
+                    </div>
+
+                    {/* PocketBase URL input */}
+                    {syncBackend === 'pocketbase' && (
+                      <div style={{ marginBottom: 12 }}>
+                        <label className="modal__label" htmlFor="pb-url">PocketBase URL</label>
+                        <input
+                          id="pb-url"
+                          className="modal__input"
+                          type="url"
+                          placeholder="http://127.0.0.1:8090"
+                          value={pocketbaseUrl}
+                          onChange={e => setPocketbaseUrl(e.target.value)}
+                        />
+                        <p className="settings__hint" style={{ marginTop: 4 }}>
+                          Your PocketBase instance must have <code>time_entries</code>, <code>tags</code>, and{' '}
+                          <code>active_timers</code> collections. See the{' '}
+                          <button className="settings__update-link" onClick={() => api?.openExternal?.('https://pocketbase.io/docs/')}>PocketBase docs</button>{' '}
+                          for setup instructions.
+                        </p>
+                      </div>
+                    )}
+
+                    <AuthButton syncBackend={syncBackend} pocketbaseUrl={pocketbaseUrl} />
+                  </>
+                )}
               </div>
 
               {/* ── Notifications ── */}

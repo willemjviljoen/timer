@@ -32,7 +32,9 @@ const crypto = require('crypto');
 
 const Database = require('better-sqlite3');
 const { runMigrations } = require('./db-migrations');
-const auth = require('./auth');
+const auth   = require('./auth');
+const pbAuth = require('./pb-auth');
+const { initPocketBase, resetPocketBase } = require('./pocketbase');
 const { compareSemver, esc, pad } = require('./utils');
 
 // Resolve assets folder whether running in dev or packaged
@@ -49,9 +51,15 @@ let db = null;
 let isQuitting = false;
 let timerState = { isRunning: false, description: '', elapsed: 0 };
 let syncEngine = null;
+let pbInstance = null; // Active PocketBase client
 
 // ─── Settings ────────────────────────────────────────────────────
-const DEFAULT_SETTINGS = { notificationThresholdMinutes: 120, syncEnabled: false };
+const DEFAULT_SETTINGS = {
+  notificationThresholdMinutes: 120,
+  syncEnabled: false,
+  syncBackend:    'firebase', // 'firebase' | 'pocketbase'
+  pocketbaseUrl:  '',
+};
 let settingsCache = null;
 
 function getSettingsPath() {
@@ -308,7 +316,17 @@ function registerIPC() {
 
   // Settings
   ipcMain.handle('get-settings', () => loadSettings());
-  ipcMain.handle('save-settings', (_event, settings) => writeSettings(settings));
+  ipcMain.handle('save-settings', (_event, settings) => {
+    const prev = settingsCache ? { ...settingsCache } : {};
+    const next = writeSettings(settings);
+    // If PocketBase URL changed, drop the cached client so it's recreated on next sign-in
+    if (prev.pocketbaseUrl !== next.pocketbaseUrl) {
+      if (syncEngine) { syncEngine.stop(); syncEngine = null; }
+      resetPocketBase();
+      pbInstance = null;
+    }
+    return next;
+  });
 
   // Desktop notification
   ipcMain.handle('show-notification', (_event, title, body) => {
@@ -492,12 +510,16 @@ function registerIPC() {
   });
 
   // ─── Auth ───────────────────────────────────────────────────────
+  // Firebase / Google sign-in
   ipcMain.handle('auth:sign-in', async () => {
+    const settings = loadSettings();
+    if ((settings.syncBackend || 'firebase') === 'pocketbase') {
+      return { ok: false, error: 'Use PocketBase sign-in for this backend.' };
+    }
     try {
-      console.log('[auth:sign-in] Starting sign-in flow...');
+      console.log('[auth:sign-in] Starting Firebase sign-in flow...');
       const user = await auth.signIn();
       console.log('[auth:sign-in] Sign-in success:', user?.uid || user?.email);
-      // Ensure syncEnabled is saved when user signs in
       const currentSettings = loadSettings();
       if (!currentSettings.syncEnabled) {
         writeSettings({ ...currentSettings, syncEnabled: true });
@@ -509,16 +531,46 @@ function registerIPC() {
     }
   });
 
+  // PocketBase email/password sign-in
+  ipcMain.handle('auth:pb-sign-in', async (_event, { email, password }) => {
+    const settings = loadSettings();
+    if (!settings.pocketbaseUrl) {
+      return { ok: false, error: 'PocketBase URL is not configured in settings.' };
+    }
+    try {
+      if (!pbInstance) {
+        pbInstance = initPocketBase(settings.pocketbaseUrl);
+      }
+      const user = await pbAuth.signIn(pbInstance, email, password);
+      const currentSettings = loadSettings();
+      if (!currentSettings.syncEnabled) {
+        writeSettings({ ...currentSettings, syncEnabled: true });
+      }
+      return { ok: true, user };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('auth:sign-out', async () => {
     if (syncEngine) {
       syncEngine.stop();
       syncEngine = null;
     }
-    await auth.signOut();
+    const settings = loadSettings();
+    if ((settings.syncBackend || 'firebase') === 'pocketbase') {
+      if (pbInstance) await pbAuth.signOut(pbInstance);
+    } else {
+      await auth.signOut();
+    }
     return { ok: true };
   });
 
   ipcMain.handle('auth:get-state', () => {
+    const settings = loadSettings();
+    if ((settings.syncBackend || 'firebase') === 'pocketbase') {
+      return pbAuth.getAuthState();
+    }
     return auth.getAuthState();
   });
 
@@ -639,75 +691,90 @@ function createWindow() {
 }
 
 // ─── Sync Lifecycle ─────────────────────────────────────────────
-async function initSync() {
-  const { initFirebase, getFirebaseFirestore, getFirebaseRtdb } = require('./firebase');
-  const { SyncEngine } = require('./sync');
 
-  // Listen for auth state changes to start/stop sync
-  auth.onAuthStateChanged((user) => {
-    console.log('[initSync] Auth state changed:', user ? `uid=${user.uid}` : 'signed out');
-    // Forward auth state to renderer
+/** Shared sync engine callbacks — used by both Firebase and PocketBase engines. */
+function makeSyncCallbacks() {
+  return {
+    onActiveTimerChanged: (data) => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('sync:active-timer-changed', data);
+    },
+    onEntriesUpdated: () => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('sync:entries-updated');
+    },
+    onTagsUpdated: () => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('sync:tags-updated');
+    },
+    onConflictResolved: (message) => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('sync:conflict-resolved', message);
+    },
+    onStatusChanged: (status) => {
+      if (mainWindow && !mainWindow.isDestroyed())
+        mainWindow.webContents.send('sync:status-changed', status);
+    },
+  };
+}
+
+async function initSync() {
+  const { initFirebase } = require('./firebase');
+  const { SyncEngine }   = require('./sync');
+  const { PocketBaseSyncEngine } = require('./pb-sync');
+
+  // ── Helper: forward auth state + start/stop the sync engine ────
+  function handleAuthUser(user, backend) {
+    console.log(`[initSync:${backend}] User:`, user ? user.uid : 'signed out');
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('auth:state-changed', user);
     }
 
     if (user) {
-      // Stop any previous engine before creating a new one
-      if (syncEngine) {
-        syncEngine.stop();
-        syncEngine = null;
-      }
-      // User signed in — start sync
-      const { firestore, rtdb } = initFirebase();
+      if (syncEngine) { syncEngine.stop(); syncEngine = null; }
+
       const settings = loadSettings();
-      syncEngine = new SyncEngine({
-        db,
-        firestore,
-        rtdb,
-        uid:      user.uid,
-        deviceId: settings.deviceId,
-        onActiveTimerChanged: (data) => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sync:active-timer-changed', data);
-          }
-        },
-        onEntriesUpdated: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sync:entries-updated');
-          }
-        },
-        onTagsUpdated: () => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sync:tags-updated');
-          }
-        },
-        onConflictResolved: (message) => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sync:conflict-resolved', message);
-          }
-        },
-        onStatusChanged: (status) => {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('sync:status-changed', status);
-          }
-        },
-      });
+      const callbacks = makeSyncCallbacks();
+
+      if (backend === 'firebase') {
+        const { firestore, rtdb } = initFirebase();
+        syncEngine = new SyncEngine({ db, firestore, rtdb, uid: user.uid, deviceId: settings.deviceId, ...callbacks });
+      } else {
+        syncEngine = new PocketBaseSyncEngine({ db, pb: pbInstance, uid: user.uid, deviceId: settings.deviceId, ...callbacks });
+      }
       syncEngine.start();
     } else {
-      // User signed out — stop sync
-      if (syncEngine) {
-        syncEngine.stop();
-        syncEngine = null;
-      }
+      if (syncEngine) { syncEngine.stop(); syncEngine = null; }
     }
+  }
+
+  // ── Firebase auth listener (only acts when backend = firebase) ──
+  auth.onAuthStateChanged((user) => {
+    const settings = loadSettings();
+    if ((settings.syncBackend || 'firebase') !== 'firebase') return;
+    handleAuthUser(user, 'firebase');
   });
 
-  // Only attempt silent sign-in if sync is enabled in settings
+  // ── PocketBase auth listener (only acts when backend = pocketbase)
+  pbAuth.onAuthStateChanged((user) => {
+    const settings = loadSettings();
+    if ((settings.syncBackend || 'firebase') !== 'pocketbase') return;
+    handleAuthUser(user, 'pocketbase');
+  });
+
+  // ── Silent sign-in for the active backend ───────────────────────
   const settings = loadSettings();
-  console.log('[initSync] syncEnabled:', settings.syncEnabled);
-  if (settings.syncEnabled) {
+  console.log('[initSync] syncEnabled:', settings.syncEnabled, '| backend:', settings.syncBackend || 'firebase');
+  if (!settings.syncEnabled) return;
+
+  if ((settings.syncBackend || 'firebase') === 'pocketbase') {
+    if (!settings.pocketbaseUrl) return;
+    pbInstance = initPocketBase(settings.pocketbaseUrl);
+    const user = await pbAuth.trySilentSignIn(pbInstance);
+    console.log('[initSync] PocketBase silent sign-in:', user ? 'success' : 'no session');
+  } else {
     const user = await auth.trySilentSignIn();
-    console.log('[initSync] Silent sign-in result:', user ? 'success' : 'no session');
+    console.log('[initSync] Firebase silent sign-in:', user ? 'success' : 'no session');
   }
 }
 
